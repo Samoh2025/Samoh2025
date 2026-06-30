@@ -11,6 +11,7 @@ import {
   TextStyle,
 } from 'react-native';
 import { theme } from './theme';
+import { BrandMark } from './BrandMark';
 
 /* ----------------------------- formatting ----------------------------- */
 
@@ -108,58 +109,17 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone 
 /* -------------------------------- Logo -------------------------------- */
 
 /**
- * Monochrome placeholder logo (mark + wordmark). Adapts to light/dark surfaces.
- * Swap the mark for the real One Horizon Homes logo image once provided.
+ * One Horizon Homes logo — the interlocking-loops mark + "One Horizon Homes"
+ * wordmark. Adapts to light/dark surfaces. Rebuilt as vector (BrandMark).
  */
 export function Logo({ dark = false, compact = false }: { dark?: boolean; compact?: boolean }) {
   const fg = dark ? '#FFFFFF' : theme.color.text;
-  const markBg = dark ? '#FFFFFF' : theme.color.text;
-  const markFg = dark ? theme.color.text : '#FFFFFF';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <LogoMark size={compact ? 30 : 36} bg={markBg} fg={markFg} />
+      <BrandMark size={compact ? 34 : 40} color={fg} />
       {!compact && (
-        <View>
-          <Text style={{ color: fg, fontWeight: '800', fontSize: 15, letterSpacing: 1 }}>ONE HORIZON</Text>
-          <Text style={{ color: fg, fontWeight: '600', fontSize: 11, letterSpacing: 3, marginTop: -1 }}>HOMES</Text>
-        </View>
+        <Text style={{ color: fg, fontWeight: '600', fontSize: 16, letterSpacing: 0.3 }}>One Horizon Homes</Text>
       )}
-    </View>
-  );
-}
-
-/** A simple geometric house-over-horizon mark drawn with Views (no image needed). */
-export function LogoMark({ size = 36, bg = '#0A0A0A', fg = '#FFFFFF' }: { size?: number; bg?: string; fg?: string }) {
-  const roof = size * 0.26;
-  const body = size * 0.22;
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size * 0.28,
-        backgroundColor: bg,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {/* roof */}
-      <View
-        style={{
-          width: 0,
-          height: 0,
-          borderLeftWidth: roof,
-          borderRightWidth: roof,
-          borderBottomWidth: roof,
-          borderLeftColor: 'transparent',
-          borderRightColor: 'transparent',
-          borderBottomColor: fg,
-        }}
-      />
-      {/* body */}
-      <View style={{ width: roof * 1.5, height: body, backgroundColor: fg, marginTop: -1 }} />
-      {/* horizon line */}
-      <View style={{ width: size * 0.56, height: Math.max(1.5, size * 0.05), backgroundColor: fg, marginTop: size * 0.1, borderRadius: 2 }} />
     </View>
   );
 }
