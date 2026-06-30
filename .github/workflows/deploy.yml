@@ -50,14 +50,29 @@ jobs:
           echo "EXPO_TOKEN is set. Authenticated as:"
           eas whoami
 
-      - name: Initialize the Expo project (creates it on the first run)
-        run: eas init --non-interactive --force
-
       - name: Export the web bundle
         run: npx expo export --platform web
 
-      - name: Deploy to production
-        run: eas deploy --prod
+      - name: Deploy to production (with retries for first-time hosting provisioning)
+        run: |
+          set +e
+          attempt=0
+          max=6
+          until [ $attempt -ge $max ]; do
+            attempt=$((attempt+1))
+            echo "::group::Deploy attempt $attempt of $max"
+            eas deploy --prod --non-interactive
+            code=$?
+            echo "::endgroup::"
+            if [ $code -eq 0 ]; then
+              echo "Deploy succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt failed (exit $code). EAS Hosting may still be provisioning storage for this new account; waiting 25s before retrying..."
+            sleep 25
+          done
+          echo "::error::Deploy did not succeed after $max attempts."
+          exit 1
 
       - name: Done
         run: echo "Deployed. Your site should be live at https://sam-one-horizon-homes.expo.app"

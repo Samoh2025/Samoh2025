@@ -2,8 +2,14 @@
   "expo": {
     "name": "One Horizon Homes — Sam's Team",
     "slug": "sam-one-horizon-homes",
+    "owner": "samohh",
     "scheme": "samoh",
     "version": "1.0.0",
+    "extra": {
+      "eas": {
+        "projectId": "f2409186-3bb6-4672-9194-e48be4d6430e"
+      }
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
