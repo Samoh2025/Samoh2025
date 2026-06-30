@@ -18,19 +18,29 @@ deploying it creates a brand‑new URL and has **zero effect** on your existing 
 
 A complete sales command center for a home‑improvement / construction sales team:
 
-- **Login** — branded sign‑in for Sam (demo mode: any password works).
+- **Accounts** — real sign‑up / sign‑in. Sam is the admin (seeded as
+  `sam@onehorizonhomes.com` / `horizon`); anyone he adds is a sales rep.
 - **Dashboard** — KPIs (open leads, pipeline value, deals won, upcoming visits),
   a pipeline funnel, a team leaderboard, upcoming appointments and a live activity feed.
-- **Leads & Pipeline** — add leads, filter by stage, and move them
-  New → Contacted → Appointment → Quoted → Won / Lost.
+- **Leads & Pipeline** — add leads, **import contacts** (paste CSV / spreadsheet),
+  filter by stage, and move them New → Contacted → Appointment → Quoted → Won / Lost.
+- **Door‑Knock Map** — a live OpenStreetMap of the territory with a pin per door,
+  colored by knock outcome (interested / call back / no answer / not interested / not
+  knocked), the rep's own location, and a route list to update outcomes in the field.
 - **Sales Team** — Sam's reps with per‑rep stats; add new reps.
 - **Projects** — jobs from *Estimating* through *Completed*, with values and status.
 - **Appointments** — consultations, site visits, walkthroughs and closings; check them off.
 - **Settings** — shows **Sam's website link** front‑and‑center, plus profile, company info,
   reset‑to‑sample‑data, and sign‑out.
 
-Everything is interactive and persists in the browser (localStorage), so Sam can actually
-use it as a working demo without any server.
+The brand is **black & white** throughout. Everything is interactive and persists in the
+browser (localStorage), so Sam can use it as a working app with no server.
+
+> **Single device vs. team‑wide:** accounts and door‑knock outcomes are stored in the
+> browser, so they're real on one device. For every rep to log in on **their own phone**
+> and for the map to track the team **live across devices**, add a backend (e.g. Supabase) —
+> a one‑time setup step. The brand **logo image** and exact **font** also need to be
+> supplied (this build uses a monochrome placeholder logo and a clean system font).
 
 > **Note on accuracy:** This session was locked down and could not open
 > `one-horizon-homes.expo.app` (the network policy blocked it, and the app is login‑protected),

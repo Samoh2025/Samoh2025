@@ -36,11 +36,11 @@ export default function Team() {
       {/* Admin card */}
       <Card style={{ backgroundColor: theme.color.primary, borderColor: theme.color.primary }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <Avatar initials={CONFIG.admin.initials} color={theme.color.accent} size={52} />
+          <Avatar initials={CONFIG.admin.initials} color="#5C5C5C" size={52} />
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: theme.font.h3 }}>{CONFIG.admin.fullName}</Text>
-              <Badge label="Admin" tone="accent" />
+              <Badge label="Admin" tone="neutral" />
             </View>
             <Text style={{ color: theme.color.mutedOnDark, fontSize: theme.font.small, marginTop: 2 }}>
               {CONFIG.admin.role} · {CONFIG.admin.email}

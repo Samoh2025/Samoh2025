@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
-import { useStore, repById } from '../store';
+import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
+import { useStore, repById, ImportRow } from '../store';
 import { theme } from '../theme';
 import {
   Card,
@@ -33,10 +33,11 @@ const nextStage: Partial<Record<LeadStage, LeadStage>> = {
 };
 
 export default function Leads() {
-  const { data, addLead, setLeadStage } = useStore();
+  const { data, addLead, setLeadStage, importLeads } = useStore();
   const { leads, team } = data;
   const [filter, setFilter] = useState<'all' | LeadStage>('all');
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const filtered = useMemo(
     () => (filter === 'all' ? leads : leads.filter((l) => l.stage === filter)),
@@ -50,7 +51,10 @@ export default function Leads() {
           <Text style={{ fontSize: theme.font.h2, fontWeight: '800', color: theme.color.text }}>Leads & Pipeline</Text>
           <Text style={{ color: theme.color.muted, marginTop: 2 }}>{leads.length} leads in your funnel</Text>
         </View>
-        <Button title="Add lead" icon="＋" variant="primary" onPress={() => setAdding(true)} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button title="Import contacts" icon="⇪" variant="outline" onPress={() => setImporting(true)} />
+          <Button title="Add lead" icon="＋" variant="primary" onPress={() => setAdding(true)} />
+        </View>
       </View>
 
       {/* Filter chips */}
@@ -128,7 +132,108 @@ export default function Leads() {
       )}
 
       <AddLeadModal visible={adding} onClose={() => setAdding(false)} onAdd={(l) => { addLead(l); setAdding(false); }} teamIds={team} />
+      <ImportContactsModal
+        visible={importing}
+        onClose={() => setImporting(false)}
+        onImport={(rows) => importLeads(rows)}
+      />
     </ScrollView>
+  );
+}
+
+/** Parse pasted CSV / spreadsheet text into contact rows. */
+export function parseContacts(text: string): ImportRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const split = (line: string) => line.split(delim).map((c) => c.trim());
+
+  // Detect a header row.
+  const first = split(lines[0]).map((h) => h.toLowerCase());
+  const looksLikeHeader = first.some((h) => /name|email|phone|address|contact/.test(h));
+  const headers = looksLikeHeader ? first : ['name', 'phone', 'email', 'address', 'value', 'type', 'source'];
+  const body = looksLikeHeader ? lines.slice(1) : lines;
+
+  const idx = (keys: string[]) => headers.findIndex((h) => keys.some((k) => h.includes(k)));
+  const ni = idx(['name', 'contact']);
+  const pi = idx(['phone', 'mobile', 'cell']);
+  const ei = idx(['email']);
+  const ai = idx(['address', 'street']);
+  const vi = idx(['value', 'amount', 'budget']);
+  const si = idx(['source', 'lead source']);
+
+  return body
+    .map((line) => {
+      const c = split(line);
+      const pick = (i: number) => (i >= 0 ? c[i] ?? '' : '');
+      const name = ni >= 0 ? pick(ni) : c[0] ?? '';
+      const valueRaw = pick(vi).replace(/[^0-9.]/g, '');
+      return {
+        name,
+        phone: pick(pi),
+        email: pick(ei),
+        address: pick(ai),
+        value: valueRaw ? Number(valueRaw) : 0,
+        source: pick(si) || 'Imported',
+      } as ImportRow;
+    })
+    .filter((r) => r.name);
+}
+
+function ImportContactsModal({
+  visible,
+  onClose,
+  onImport,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onImport: (rows: ImportRow[]) => number;
+}) {
+  const [text, setText] = useState('');
+  const parsed = useMemo(() => parseContacts(text), [text]);
+
+  const sample = 'Name, Phone, Email, Address, Value, Source\nJohn Smith, (201) 555-0123, john@email.com, 12 Elm St Ridgewood NJ, 45000, Referral';
+
+  const submit = () => {
+    const n = onImport(parsed);
+    if (n > 0) {
+      setText('');
+      onClose();
+    }
+  };
+
+  return (
+    <AppModal visible={visible} onClose={onClose} title="Import contacts">
+      <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>
+        Paste your contact list from a spreadsheet (Excel, Google Sheets) or a CSV. The first row can be column
+        headers like Name, Phone, Email, Address, Value, Source.
+      </Text>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        placeholder={sample}
+        placeholderTextColor="#A9A9A9"
+        multiline
+        style={{
+          minHeight: 150,
+          backgroundColor: '#F6F6F6',
+          borderWidth: 1,
+          borderColor: theme.color.border,
+          borderRadius: theme.radius.md,
+          padding: 12,
+          fontSize: theme.font.small,
+          color: theme.color.text,
+          textAlignVertical: 'top',
+        }}
+      />
+      <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>
+        {parsed.length} contact{parsed.length === 1 ? '' : 's'} detected
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Button title="Cancel" variant="outline" onPress={onClose} style={{ flex: 1 }} />
+        <Button title={`Import ${parsed.length || ''}`.trim()} variant="primary" icon="⇪" onPress={submit} style={{ flex: 1 }} />
+      </View>
+    </AppModal>
   );
 }
 

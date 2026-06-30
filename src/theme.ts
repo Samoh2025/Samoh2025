@@ -1,48 +1,48 @@
-/** Design tokens for the One Horizon Homes admin app. */
+/** Design tokens for the One Horizon Homes admin app — black & white brand. */
 export const theme = {
   color: {
-    // Brand
-    primary: '#14304A', // deep navy
-    primaryDark: '#0D2236',
-    primarySoft: '#21456A',
-    accent: '#E0A52E', // warm amber
-    accentSoft: '#F6E2B3',
+    // Brand (monochrome)
+    primary: '#0A0A0A', // black
+    primaryDark: '#000000',
+    primarySoft: '#2A2A2A',
+    accent: '#0A0A0A', // black
+    accentSoft: '#ECECEC', // light gray
 
     // Surfaces
-    bg: '#F3F5F8',
+    bg: '#FFFFFF',
     card: '#FFFFFF',
-    sidebar: '#0F2A43',
-    sidebarActive: '#1C4368',
+    sidebar: '#0A0A0A',
+    sidebarActive: '#262626',
 
     // Text
-    text: '#15212E',
-    textOnDark: '#EAF1F8',
-    muted: '#6B7C8E',
-    mutedOnDark: '#9FB4C9',
+    text: '#0A0A0A',
+    textOnDark: '#FFFFFF',
+    muted: '#6B6B6B',
+    mutedOnDark: '#B7B7B7',
 
     // Lines
-    border: '#E3E9EF',
-    borderDark: '#1C3A57',
+    border: '#E4E4E4',
+    borderDark: '#2A2A2A',
 
-    // Status
-    success: '#1F9D6B',
-    successSoft: '#DDF3E9',
-    warning: '#E0A52E',
-    warningSoft: '#FBEDCF',
-    danger: '#D6453E',
-    dangerSoft: '#FBE2E1',
-    info: '#2D7FB8',
-    infoSoft: '#DCEDF8',
+    // Status (monochrome — distinguished by fill vs. outline, not hue)
+    success: '#0A0A0A',
+    successSoft: '#ECECEC',
+    warning: '#3A3A3A',
+    warningSoft: '#EFEFEF',
+    danger: '#0A0A0A',
+    dangerSoft: '#F4F4F4',
+    info: '#3A3A3A',
+    infoSoft: '#F0F0F0',
   },
   radius: { sm: 8, md: 12, lg: 16, xl: 22, pill: 999 },
   space: (n: number) => n * 4,
   shadow: {
     card: {
-      shadowColor: '#0B1F33',
-      shadowOpacity: 0.08,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 8 },
-      elevation: 3,
+      shadowColor: '#000000',
+      shadowOpacity: 0.06,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 2,
     },
   },
   font: {

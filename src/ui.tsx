@@ -74,13 +74,14 @@ export function Avatar({
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent';
 
-const toneMap: Record<Tone, { bg: string; fg: string }> = {
-  neutral: { bg: '#EEF2F6', fg: theme.color.muted },
-  success: { bg: theme.color.successSoft, fg: theme.color.success },
-  warning: { bg: theme.color.warningSoft, fg: '#9A6B0E' },
-  danger: { bg: theme.color.dangerSoft, fg: theme.color.danger },
-  info: { bg: theme.color.infoSoft, fg: theme.color.info },
-  accent: { bg: theme.color.accentSoft, fg: '#8A6410' },
+// Monochrome tones: strong states are filled black, "lost"/danger is outlined.
+const toneMap: Record<Tone, { bg: string; fg: string; border?: string }> = {
+  neutral: { bg: '#F0F0F0', fg: '#5A5A5A' },
+  success: { bg: '#0A0A0A', fg: '#FFFFFF' },
+  warning: { bg: '#E2E2E2', fg: '#2A2A2A' },
+  danger: { bg: '#FFFFFF', fg: '#0A0A0A', border: '#0A0A0A' },
+  info: { bg: '#F0F0F0', fg: '#2A2A2A' },
+  accent: { bg: '#0A0A0A', fg: '#FFFFFF' },
 };
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone }) {
@@ -93,11 +94,72 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: Tone 
         paddingVertical: 4,
         borderRadius: theme.radius.pill,
         alignSelf: 'flex-start',
+        borderWidth: c.border ? 1 : 0,
+        borderColor: c.border ?? 'transparent',
       }}
     >
       <Text style={{ color: c.fg, fontWeight: '700', fontSize: theme.font.tiny, letterSpacing: 0.3 }}>
         {label.toUpperCase()}
       </Text>
+    </View>
+  );
+}
+
+/* -------------------------------- Logo -------------------------------- */
+
+/**
+ * Monochrome placeholder logo (mark + wordmark). Adapts to light/dark surfaces.
+ * Swap the mark for the real One Horizon Homes logo image once provided.
+ */
+export function Logo({ dark = false, compact = false }: { dark?: boolean; compact?: boolean }) {
+  const fg = dark ? '#FFFFFF' : theme.color.text;
+  const markBg = dark ? '#FFFFFF' : theme.color.text;
+  const markFg = dark ? theme.color.text : '#FFFFFF';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <LogoMark size={compact ? 30 : 36} bg={markBg} fg={markFg} />
+      {!compact && (
+        <View>
+          <Text style={{ color: fg, fontWeight: '800', fontSize: 15, letterSpacing: 1 }}>ONE HORIZON</Text>
+          <Text style={{ color: fg, fontWeight: '600', fontSize: 11, letterSpacing: 3, marginTop: -1 }}>HOMES</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** A simple geometric house-over-horizon mark drawn with Views (no image needed). */
+export function LogoMark({ size = 36, bg = '#0A0A0A', fg = '#FFFFFF' }: { size?: number; bg?: string; fg?: string }) {
+  const roof = size * 0.26;
+  const body = size * 0.22;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.28,
+        backgroundColor: bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* roof */}
+      <View
+        style={{
+          width: 0,
+          height: 0,
+          borderLeftWidth: roof,
+          borderRightWidth: roof,
+          borderBottomWidth: roof,
+          borderLeftColor: 'transparent',
+          borderRightColor: 'transparent',
+          borderBottomColor: fg,
+        }}
+      />
+      {/* body */}
+      <View style={{ width: roof * 1.5, height: body, backgroundColor: fg, marginTop: -1 }} />
+      {/* horizon line */}
+      <View style={{ width: size * 0.56, height: Math.max(1.5, size * 0.05), backgroundColor: fg, marginTop: size * 0.1, borderRadius: 2 }} />
     </View>
   );
 }
@@ -132,7 +194,6 @@ export function StatCard({
   icon: string;
   tone?: Tone;
 }) {
-  const c = toneMap[tone];
   return (
     <Card style={{ flex: 1, minWidth: 150 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -141,17 +202,17 @@ export function StatCard({
             width: 38,
             height: 38,
             borderRadius: 10,
-            backgroundColor: c.bg,
+            backgroundColor: theme.color.text,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Text style={{ fontSize: 18 }}>{icon}</Text>
+          <Text style={{ fontSize: 17 }}>{icon}</Text>
         </View>
       </View>
       <Text style={{ fontSize: 28, fontWeight: '800', color: theme.color.text, marginTop: 10 }}>{value}</Text>
       <Text style={{ fontSize: theme.font.small, color: theme.color.muted, marginTop: 2 }}>{label}</Text>
-      {sub ? <Text style={{ fontSize: theme.font.tiny, color: c.fg, fontWeight: '700', marginTop: 6 }}>{sub}</Text> : null}
+      {sub ? <Text style={{ fontSize: theme.font.tiny, color: theme.color.muted, fontWeight: '700', marginTop: 6 }}>{sub}</Text> : null}
     </Card>
   );
 }
@@ -184,10 +245,10 @@ export function Button({
   };
   const variants: Record<string, { c: ViewStyle; t: TextStyle }> = {
     primary: { c: { backgroundColor: theme.color.primary }, t: { color: '#fff' } },
-    accent: { c: { backgroundColor: theme.color.accent }, t: { color: '#3A2A06' } },
+    accent: { c: { backgroundColor: theme.color.primary }, t: { color: '#fff' } },
     ghost: { c: { backgroundColor: 'transparent' }, t: { color: theme.color.primary } },
-    outline: { c: { backgroundColor: '#fff', borderWidth: 1, borderColor: theme.color.border }, t: { color: theme.color.text } },
-    danger: { c: { backgroundColor: theme.color.dangerSoft }, t: { color: theme.color.danger } },
+    outline: { c: { backgroundColor: '#fff', borderWidth: 1, borderColor: theme.color.text }, t: { color: theme.color.text } },
+    danger: { c: { backgroundColor: '#fff', borderWidth: 1, borderColor: theme.color.text }, t: { color: theme.color.text } },
   };
   const v = variants[variant];
   return (

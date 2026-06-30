@@ -3,7 +3,17 @@ import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-na
 import { CONFIG } from './config';
 import { theme } from './theme';
 import { ROUTES, RouteKey } from './nav';
-import { Avatar } from './ui';
+import { Avatar, Logo } from './ui';
+import { useAuth } from './auth';
+
+function initialsOf(name?: string) {
+  return (name ?? 'U')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 export default function Shell({
   route,
@@ -15,8 +25,10 @@ export default function Shell({
   children: React.ReactNode;
 }) {
   const { width } = useWindowDimensions();
+  const { user } = useAuth();
   const wide = width >= 900;
   const current = ROUTES.find((r) => r.key === route)!;
+  const initials = initialsOf(user?.name);
 
   const NavItem = ({ r, horizontal }: { r: (typeof ROUTES)[number]; horizontal?: boolean }) => {
     const active = r.key === route;
@@ -54,20 +66,23 @@ export default function Shell({
       {/* Sidebar (wide) */}
       {wide ? (
         <View style={{ width: 248, backgroundColor: theme.color.sidebar, padding: 16, gap: 6 }}>
-          <Brand />
+          <View style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+            <Logo dark />
+            <Text style={{ color: theme.color.mutedOnDark, fontSize: theme.font.tiny, marginTop: 8 }}>{CONFIG.teamName}</Text>
+          </View>
           <View style={{ height: 8 }} />
           {ROUTES.map((r) => (
             <NavItem key={r.key} r={r} />
           ))}
           <View style={{ flex: 1 }} />
-          <AdminFooter />
+          <UserFooter name={user?.name} role={user?.role === 'admin' ? CONFIG.admin.role : 'Sales Rep'} initials={initials} />
         </View>
       ) : (
         // Top bar (narrow)
         <View style={{ backgroundColor: theme.color.sidebar, paddingTop: 44, paddingBottom: 10, paddingHorizontal: 14, gap: 10 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Brand />
-            <Avatar initials={CONFIG.admin.initials} color={theme.color.accent} size={34} />
+            <Logo dark compact />
+            <Avatar initials={initials} color="#5C5C5C" size={34} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
             {ROUTES.map((r) => (
@@ -96,8 +111,8 @@ export default function Shell({
               {current.icon} {current.label}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>{CONFIG.admin.fullName}</Text>
-              <Avatar initials={CONFIG.admin.initials} color={theme.color.primary} size={36} />
+              <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>{user?.name}</Text>
+              <Avatar initials={initials} color={theme.color.primary} size={36} />
             </View>
           </View>
         ) : null}
@@ -107,27 +122,13 @@ export default function Shell({
   );
 }
 
-function Brand() {
+function UserFooter({ name, role, initials }: { name?: string; role: string; initials: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: theme.color.accent, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 18 }}>🏠</Text>
-      </View>
-      <View>
-        <Text style={{ color: '#fff', fontWeight: '800', fontSize: theme.font.small }}>{CONFIG.brand}</Text>
-        <Text style={{ color: theme.color.mutedOnDark, fontSize: theme.font.tiny }}>{CONFIG.teamName}</Text>
-      </View>
-    </View>
-  );
-}
-
-function AdminFooter() {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.primaryDark }}>
-      <Avatar initials={CONFIG.admin.initials} color={theme.color.accent} size={36} />
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: theme.radius.md, backgroundColor: '#1A1A1A' }}>
+      <Avatar initials={initials} color="#5C5C5C" size={36} />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: theme.font.small }}>{CONFIG.admin.name}</Text>
-        <Text style={{ color: theme.color.mutedOnDark, fontSize: theme.font.tiny }}>{CONFIG.admin.role}</Text>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: theme.font.small }}>{name ?? 'User'}</Text>
+        <Text style={{ color: theme.color.mutedOnDark, fontSize: theme.font.tiny }}>{role}</Text>
       </View>
     </View>
   );

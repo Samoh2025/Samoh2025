@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { AppData, Lead, LeadStage, Rep, Project, ProjectStatus, Appointment } from './types';
-import { seedData } from './data';
+import { AppData, Lead, LeadStage, Rep, ProjectStatus, KnockStatus } from './types';
+import { seedData, TERRITORY_CENTER } from './data';
 import { CONFIG } from './config';
 
 const STORAGE_KEY = `ohh:${CONFIG.site.slug}:v1`;
@@ -46,12 +46,33 @@ type Store = {
   addRep: (r: Omit<Rep, 'id' | 'initials' | 'color'>) => void;
   setProjectStatus: (id: string, status: ProjectStatus) => void;
   toggleAppointment: (id: string) => void;
+  setKnockStatus: (id: string, status: KnockStatus) => void;
+  importLeads: (rows: ImportRow[]) => number;
   resetDemo: () => void;
+};
+
+export type ImportRow = {
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  type?: Lead['type'];
+  value?: number;
+  source?: string;
 };
 
 const StoreContext = createContext<Store | null>(null);
 
-const PALETTE = ['#2D7FB8', '#1F9D6B', '#C2592E', '#7A4FB5', '#D6453E', '#0F8A8A'];
+// Grayscale palette (black & white brand)
+const PALETTE = ['#111111', '#3A3A3A', '#5C5C5C', '#808080', '#262626', '#6E6E6E'];
+
+/** Place a point near the territory center so imported/new leads show on the map. */
+function nearTerritory() {
+  return {
+    lat: TERRITORY_CENTER.lat + (Math.random() - 0.5) * 0.04,
+    lng: TERRITORY_CENTER.lng + (Math.random() - 0.5) * 0.05,
+  };
+}
 
 function initialsFrom(name: string) {
   return name
@@ -81,8 +102,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       data,
       addLead: (l) =>
         setData((d) => {
+          const pos = l.lat != null && l.lng != null ? { lat: l.lat, lng: l.lng } : nearTerritory();
           const lead: Lead = {
             ...l,
+            ...pos,
+            knockStatus: l.knockStatus ?? 'not_knocked',
             stage: l.stage ?? 'new',
             id: uid('l'),
             createdAt: nowISO(),
@@ -131,6 +155,39 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ...d,
           appointments: d.appointments.map((a) => (a.id === id ? { ...a, done: !a.done } : a)),
         })),
+      setKnockStatus: (id, status) =>
+        setData((d) => ({
+          ...d,
+          leads: d.leads.map((l) => (l.id === id ? { ...l, knockStatus: status } : l)),
+        })),
+      importLeads: (rows) => {
+        const valid = rows.filter((r) => r.name && r.name.trim());
+        if (valid.length === 0) return 0;
+        setData((d) => {
+          const reps = d.team;
+          const newLeads: Lead[] = valid.map((r, i) => ({
+            id: uid('l'),
+            name: r.name.trim(),
+            phone: r.phone?.trim() ?? '',
+            email: r.email?.trim() ?? '',
+            address: r.address?.trim() ?? '',
+            type: r.type ?? 'Kitchen Remodel',
+            value: r.value ?? 0,
+            stage: 'new',
+            source: r.source?.trim() || 'Imported',
+            repId: reps.length ? reps[i % reps.length].id : '',
+            createdAt: nowISO(),
+            knockStatus: 'not_knocked',
+            ...nearTerritory(),
+          }));
+          return {
+            ...d,
+            leads: [...newLeads, ...d.leads],
+            activity: [logActivity(`Imported ${newLeads.length} contacts into leads`, 'lead'), ...d.activity],
+          };
+        });
+        return valid.length;
+      },
       resetDemo: () => {
         persist.clear();
         setData(seedData());

@@ -47,7 +47,20 @@ export type Lead = {
   repId: string; // assigned sales rep
   createdAt: string; // ISO date
   note?: string;
+  lat?: number; // map position (door-knocking)
+  lng?: number;
+  knockStatus?: KnockStatus; // door-knocking outcome
 };
+
+export type KnockStatus = 'not_knocked' | 'no_answer' | 'callback' | 'interested' | 'not_interested';
+
+export const KNOCK_STATUSES: { key: KnockStatus; label: string }[] = [
+  { key: 'not_knocked', label: 'Not knocked' },
+  { key: 'no_answer', label: 'No answer' },
+  { key: 'callback', label: 'Call back' },
+  { key: 'interested', label: 'Interested' },
+  { key: 'not_interested', label: 'Not interested' },
+];
 
 export type Rep = {
   id: string;
@@ -57,6 +70,9 @@ export type Rep = {
   phone: string;
   initials: string;
   color: string;
+  /** Approx. live location for the door-knocker map (demo). */
+  lat?: number;
+  lng?: number;
 };
 
 export type ProjectStatus =
