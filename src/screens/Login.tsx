@@ -63,9 +63,6 @@ export default function Login({ onSignUp }: { onSignUp: () => void }) {
                 Create an account
               </Text>
             </View>
-            <Text style={{ color: theme.color.muted, fontSize: theme.font.tiny, textAlign: 'center' }}>
-              Demo admin — {CONFIG.admin.email} / horizon
-            </Text>
           </View>
         </Card>
       </View>

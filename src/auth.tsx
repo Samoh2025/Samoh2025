@@ -19,7 +19,7 @@ export type Account = {
   role: Role;
 };
 
-const ACC_KEY = `ohh:${CONFIG.site.slug}:accounts:v1`;
+const ACC_KEY = `ohh:${CONFIG.site.slug}:accounts:v2`;
 const SESSION_KEY = `ohh:${CONFIG.site.slug}:session:v1`;
 
 function loadAccounts(): Account[] {
@@ -46,7 +46,7 @@ function seedAccounts(): Account[] {
   return [
     {
       email: CONFIG.admin.email,
-      password: 'horizon',
+      password: 'bazbooz22',
       name: CONFIG.admin.fullName,
       company: CONFIG.brand,
       role: 'admin',

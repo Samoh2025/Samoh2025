@@ -18,8 +18,8 @@ deploying it creates a brand‑new URL and has **zero effect** on your existing 
 
 A complete sales command center for a home‑improvement / construction sales team:
 
-- **Accounts** — real sign‑up / sign‑in. Sam is the admin (seeded as
-  `sam@onehorizonhomes.com` / `horizon`); anyone he adds is a sales rep.
+- **Accounts** — real sign‑up / sign‑in. Sam is the admin account
+  (`sam@onehorizonhomes.com`); anyone he adds is a sales rep.
 - **Dashboard** — KPIs (open leads, pipeline value, deals won, upcoming visits),
   a pipeline funnel, a team leaderboard, upcoming appointments and a live activity feed.
 - **Leads & Pipeline** — add leads, **import contacts** (paste CSV / spreadsheet),
