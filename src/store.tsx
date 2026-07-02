@@ -74,6 +74,8 @@ type Store = {
   importDnc: (phones: string[]) => Promise<number>;
   /** True if this number should not be called (imported list or a lead flag). */
   isDnc: (phone?: string) => boolean;
+  /** Email a join link to a rep (needs the invite-rep function + Resend set up). */
+  inviteRep: (email: string, name?: string) => Promise<{ ok: boolean; error?: string }>;
 };
 
 export type ImportRow = {
@@ -455,6 +457,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (!n) return false;
         if (data.dnc.includes(n)) return true;
         return data.leads.some((l) => l.dnc && normalizePhone(l.phone) === n);
+      },
+
+      inviteRep: async (email, name) => {
+        if (!supabase) return { ok: false, error: 'Backend not connected.' };
+        if (!email || !email.includes('@')) return { ok: false, error: 'no-email' };
+        try {
+          const { data: res, error } = await supabase.functions.invoke('invite-rep', {
+            body: { email: email.trim(), name },
+          });
+          if (error) {
+            let msg = 'not-configured';
+            try {
+              const body = await (error as any).context?.json?.();
+              if (body?.error) msg = body.error;
+            } catch {
+              /* keep default */
+            }
+            return { ok: false, error: msg };
+          }
+          if ((res as any)?.error) return { ok: false, error: (res as any).error };
+          return { ok: true };
+        } catch {
+          return { ok: false, error: 'not-configured' };
+        }
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

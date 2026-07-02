@@ -8,10 +8,37 @@ import { Card, Avatar, Badge, Button, Field, AppModal, moneyShort } from '../ui'
 import { Rep } from '../types';
 
 export default function Team() {
-  const { data, addRep } = useStore();
+  const { data, addRep, inviteRep } = useStore();
   const { isAdmin } = useAuth();
   const { team, leads } = data;
   const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const inviteResultText = (email: string, r: { ok: boolean; error?: string }) =>
+    r.ok
+      ? `✉️ Invite emailed to ${email}.`
+      : r.error === 'not-configured' || r.error === 'send-failed'
+      ? `Added — but automated email isn't set up yet, so share the app link with them (see SETUP.md).`
+      : `Added — couldn't email the invite. Share the app link with them.`;
+
+  // Add the rep, then try to email them a join link.
+  const handleAdd = async (rep: Omit<Rep, 'id' | 'initials' | 'color'>) => {
+    const res = await addRep(rep);
+    if (!res.ok) return res;
+    if (rep.email) {
+      const inv = await inviteRep(rep.email, rep.name);
+      setNotice(inv.ok ? inviteResultText(rep.email, inv) : `${rep.name} ${inviteResultText(rep.email, inv)}`);
+    } else {
+      setNotice(`${rep.name} added. Share the app link so they can sign up.`);
+    }
+    return { ok: true };
+  };
+
+  const emailInvite = async (rep: Rep) => {
+    if (!rep.email) return;
+    const inv = await inviteRep(rep.email, rep.name);
+    setNotice(inviteResultText(rep.email, inv));
+  };
 
   const admins = team.filter((m) => m.role === 'admin');
   const reps = team.filter((m) => m.role !== 'admin');
@@ -39,6 +66,15 @@ export default function Team() {
         </View>
         {isAdmin ? <Button title="Add rep" icon="＋" onPress={() => setAdding(true)} /> : null}
       </View>
+
+      {notice ? (
+        <Card style={{ borderColor: theme.color.accent, borderWidth: 1.5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ flex: 1, color: theme.color.text, fontSize: theme.font.small, fontWeight: '600' }}>{notice}</Text>
+            <Text onPress={() => setNotice(null)} style={{ color: theme.color.muted, fontSize: 18 }}>×</Text>
+          </View>
+        </Card>
+      ) : null}
 
       {/* Admin card(s) */}
       {(admins.length ? admins : [null]).map((admin, i) => (
@@ -93,13 +129,18 @@ export default function Team() {
                     <Metric label="Won $" value={moneyShort(s.wonValue)} accent />
                   </View>
                 </View>
+                {isAdmin && !active && rep.email ? (
+                  <View style={{ marginTop: 10, flexDirection: 'row' }}>
+                    <Button small variant="outline" icon="✉️" title="Email invite" onPress={() => emailInvite(rep)} />
+                  </View>
+                ) : null}
               </Card>
             );
           })}
         </View>
       )}
 
-      <AddRepModal visible={adding} onClose={() => setAdding(false)} onAdd={addRep} />
+      <AddRepModal visible={adding} onClose={() => setAdding(false)} onAdd={handleAdd} />
     </ScrollView>
   );
 }

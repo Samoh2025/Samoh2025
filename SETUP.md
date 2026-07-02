@@ -164,6 +164,45 @@ code) and states keep separate lists. This app gives you the guardrail:
 
 ---
 
+# Emailing rep invites (Resend)
+
+By default, **Add rep** just adds someone to the roster — the fastest way to get a
+rep in is to send them the app link yourself and have them sign up. To make the
+app **email a join link automatically** (and to power the "Email invite" button),
+connect a free email service. We use **Resend**.
+
+> Why the domain step matters: strict inboxes (especially **AOL**) drop email from
+> unverified senders. Verifying your domain is what gets invites *delivered*.
+
+### A. Resend account & domain
+1. Create a free account at **https://resend.com**.
+2. **Domains → Add Domain →** enter `onehorizonhomes.com` (or a subdomain like
+   `mail.onehorizonhomes.com`).
+3. Resend shows a few **DNS records** (SPF/DKIM). Add them wherever your domain's
+   DNS lives (e.g. GoDaddy, Google, Cloudflare). Wait for Resend to show **Verified**.
+   *(No domain access? In test mode Resend only lets you email your own address —
+   fine for a quick test, but you must verify a domain to email reps like AOL users.)*
+4. **API Keys → Create API Key** → copy it (`re_…`).
+
+### B. Deploy the function & set secrets (Supabase CLI)
+```bash
+supabase functions deploy invite-rep
+
+supabase secrets set \
+  RESEND_API_KEY=re_xxxxxxxx \
+  INVITE_FROM="One Horizon Homes <invites@onehorizonhomes.com>"
+```
+`INVITE_FROM` **must** use an address on the domain you verified in step A.
+
+### C. Use it
+- **Add rep** with an email → they're emailed a join link automatically.
+- On any rep still showing **Invited**, tap **✉️ Email invite** to (re)send it.
+
+If email isn't set up yet, adding a rep still works — the app just tells you to
+share the link manually instead.
+
+---
+
 ## Local development (optional)
 
 ```bash
