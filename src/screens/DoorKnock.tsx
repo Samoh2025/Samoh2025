@@ -450,14 +450,22 @@ function DoorDetailsModal({
 
 /* --------------------------- Import properties ------------------------- */
 
-type ParsedRow = { address: string; listingStatus: ListingStatus; category: PropertyCategory; name?: string; phone?: string };
+type ParsedRow = {
+  address: string;
+  listingStatus: ListingStatus;
+  category: PropertyCategory;
+  name?: string;
+  phone?: string;
+  lat?: number;
+  lng?: number;
+};
 
 function toListing(s: string): ListingStatus {
   const t = (s || '').toLowerCase();
-  if (/under\s*contract|\bu\/?c\b|attorney review/.test(t)) return 'under_contract';
+  if (/under\s*contract|\bu\/?c\b|contingent|attorney review/.test(t)) return 'under_contract';
   if (/pending|under offer|accepted offer/.test(t)) return 'pending';
   if (/lease|rent/.test(t)) return 'for_lease';
-  if (/for\s*sale|active|listed|\bsale\b/.test(t)) return 'for_sale';
+  if (/for\s*sale|active|coming soon|listed|\bsale\b/.test(t)) return 'for_sale';
   return 'none';
 }
 
@@ -467,39 +475,76 @@ function toCategory(s: string): PropertyCategory {
     : 'residential';
 }
 
-/** Parse a pasted spreadsheet/CSV of properties into rows. */
+/** Split a line, respecting double-quoted CSV fields (Excel/Redfin exports). */
+function splitLine(line: string, delim: string): string[] {
+  if (delim !== ',') return line.split(delim).map((c) => c.trim());
+  const out: string[] = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out.map((c) => c.trim());
+}
+
+/** Parse a pasted spreadsheet/CSV of properties into rows. Understands common
+ *  exports (incl. Redfin's "Download All"), using latitude/longitude columns
+ *  directly when present and building a full address from separate city/state
+ *  columns. */
 export function parseProperties(text: string): ParsedRow[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return [];
   const delim = lines[0].includes('\t') ? '\t' : ',';
-  const split = (line: string) => line.split(delim).map((c) => c.trim());
 
-  const first = split(lines[0]).map((h) => h.toLowerCase());
-  const hasHeader = first.some((h) => /address|status|type|name|phone/.test(h));
+  const first = splitLine(lines[0], delim).map((h) => h.toLowerCase());
+  const hasHeader = first.some((h) => /address|status|type|name|phone|latitude|city/.test(h));
   const headers = hasHeader ? first : [];
   const body = hasHeader ? lines.slice(1) : lines;
 
   const col = (keys: string[]) => headers.findIndex((h) => keys.some((k) => h.includes(k)));
   const ai = col(['address', 'street']);
-  const si = col(['status', 'stage']);
-  const ti = col(['type', 'category', 'class']);
+  const ci = col(['city']);
+  const sti = col(['state', 'province']);
+  const zi = col(['zip', 'postal']);
+  const si = col(['status', 'stage', 'sale type']);
+  const ti = col(['property type', 'type', 'category', 'class']);
   const ni = col(['name', 'owner', 'business']);
   const pi = col(['phone', 'mobile', 'cell']);
+  const lati = col(['latitude', 'lat']);
+  const lngi = col(['longitude', 'lng', 'lon']);
 
   return body
     .map((line) => {
-      const c = split(line);
-      const pick = (i: number) => (i >= 0 ? c[i] ?? '' : '');
-      // Without headers, the whole line is the address; look for a status word in it.
-      const address = hasHeader ? pick(ai) || c[0] || '' : line;
-      const statusText = hasHeader ? pick(si) : line;
-      const typeText = hasHeader ? pick(ti) : line;
+      const c = splitLine(line, delim);
+      const pick = (i: number) => (i >= 0 ? (c[i] ?? '').trim() : '');
+      // Build the fullest address we can from whatever columns exist.
+      let address: string;
+      if (!hasHeader) address = line;
+      else if (ci >= 0) address = [pick(ai) || c[0], pick(ci), [pick(sti), pick(zi)].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      else address = pick(ai) || c[0] || '';
+
+      const lat = lati >= 0 ? parseFloat(pick(lati)) : NaN;
+      const lng = lngi >= 0 ? parseFloat(pick(lngi)) : NaN;
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+
       return {
         address: address.trim(),
-        listingStatus: toListing(statusText),
-        category: toCategory(typeText),
+        listingStatus: toListing(hasHeader ? pick(si) : line),
+        category: toCategory(hasHeader ? pick(ti) : line),
         name: pick(ni) || undefined,
         phone: pick(pi) || undefined,
+        lat: hasCoords ? lat : undefined,
+        lng: hasCoords ? lng : undefined,
       } as ParsedRow;
     })
     .filter((r) => r.address && r.address.length > 4);
@@ -532,19 +577,27 @@ function ImportPropertiesModal({
     const doors: NewDoor[] = [];
     for (let i = 0; i < parsed.length; i++) {
       setProgress({ done: i, total: parsed.length });
-      const geo = await geocodeAddress(parsed[i].address);
-      if (geo) {
+      const row = parsed[i];
+      let { lat, lng } = row;
+      // Coordinates already in the file (e.g. Redfin export) → use them directly.
+      const needGeo = lat == null || lng == null;
+      if (needGeo) {
+        const geo = await geocodeAddress(row.address);
+        if (geo) { lat = geo.lat; lng = geo.lng; }
+      }
+      if (lat != null && lng != null) {
         doors.push({
-          address: parsed[i].address,
-          lat: geo.lat,
-          lng: geo.lng,
-          name: parsed[i].name,
-          phone: parsed[i].phone,
-          category: parsed[i].category,
-          listingStatus: parsed[i].listingStatus,
+          address: row.address,
+          lat,
+          lng,
+          name: row.name,
+          phone: row.phone,
+          category: row.category,
+          listingStatus: row.listingStatus,
         });
       }
-      if (i < parsed.length - 1) await sleep(1100); // respect OpenStreetMap's rate limit
+      // Only throttle when we actually hit the free geocoder.
+      if (needGeo && i < parsed.length - 1) await sleep(1100);
     }
     setProgress(null);
     const added = await onImport(doors);
@@ -583,7 +636,7 @@ function ImportPropertiesModal({
       />
       <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>
         {busy && progress
-          ? `Locating addresses… ${progress.done + 1} of ${progress.total}`
+          ? `Adding properties… ${progress.done + 1} of ${progress.total}`
           : result
           ? `✓ Added ${result.added} to the map${result.skipped ? ` · ${result.skipped} couldn't be located` : ''}`
           : `${parsed.length} propert${parsed.length === 1 ? 'y' : 'ies'} detected`}
