@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { useStore, repById, ImportRow } from '../store';
+import { useDialer } from '../dialer';
 import { theme } from '../theme';
 import {
   Card,
@@ -14,7 +15,19 @@ import {
   money,
   formatDate,
 } from '../ui';
-import { LEAD_STAGES, LeadStage, PROJECT_TYPES, ProjectType, Lead } from '../types';
+import {
+  LEAD_STAGES,
+  LeadStage,
+  PROJECT_TYPES,
+  ProjectType,
+  Lead,
+  PROPERTY_CATEGORIES,
+  PropertyCategory,
+  LISTING_STATUSES,
+  ListingStatus,
+} from '../types';
+
+const listingLabel = (s?: ListingStatus) => LISTING_STATUSES.find((x) => x.key === s)?.label ?? '';
 
 const stageTone: Record<LeadStage, any> = {
   new: 'info',
@@ -33,8 +46,10 @@ const nextStage: Partial<Record<LeadStage, LeadStage>> = {
 };
 
 export default function Leads() {
-  const { data, addLead, setLeadStage, importLeads } = useStore();
+  const { data, addLead, setLeadStage, importLeads, isDnc } = useStore();
+  const { call } = useDialer();
   const { leads, team } = data;
+  const reps = team.filter((m) => m.role !== 'admin');
   const [filter, setFilter] = useState<'all' | LeadStage>('all');
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -87,6 +102,9 @@ export default function Leads() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <Text style={{ fontWeight: '800', fontSize: theme.font.body, color: theme.color.text }}>{l.name}</Text>
                       <Badge label={LEAD_STAGES.find((s) => s.key === l.stage)!.label} tone={stageTone[l.stage]} />
+                      {(l.category ?? 'residential') === 'commercial' ? <Badge label="Commercial" tone="neutral" /> : null}
+                      {l.listingStatus && l.listingStatus !== 'none' ? <Badge label={listingLabel(l.listingStatus)} tone="info" /> : null}
+                      {l.dnc ? <Badge label="Do Not Call" tone="danger" /> : null}
                     </View>
                     <Text style={{ color: theme.color.muted, fontSize: theme.font.small, marginTop: 3 }}>
                       {l.type} · {l.address}
@@ -105,6 +123,13 @@ export default function Leads() {
 
                 {/* Stage actions */}
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                  {l.phone ? (
+                    isDnc(l.phone) ? (
+                      <Badge label="Do Not Call" tone="danger" />
+                    ) : (
+                      <Button small variant="outline" icon="📞" title="Call" onPress={() => call(l.phone, l.name)} />
+                    )
+                  ) : null}
                   {adv ? (
                     <Button
                       small
@@ -131,7 +156,7 @@ export default function Leads() {
         </View>
       )}
 
-      <AddLeadModal visible={adding} onClose={() => setAdding(false)} onAdd={(l) => { addLead(l); setAdding(false); }} teamIds={team} />
+      <AddLeadModal visible={adding} onClose={() => setAdding(false)} onAdd={(l) => { addLead(l); setAdding(false); }} teamIds={reps} />
       <ImportContactsModal
         visible={importing}
         onClose={() => setImporting(false)}
@@ -278,10 +303,13 @@ function AddLeadModal({
   const [type, setType] = useState<ProjectType>(PROJECT_TYPES[0]);
   const [source, setSource] = useState('Website');
   const [repId, setRepId] = useState(teamIds[0]?.id ?? '');
+  const [category, setCategory] = useState<PropertyCategory>('residential');
+  const [listingStatus, setListingStatus] = useState<ListingStatus>('none');
 
   const reset = () => {
     setName(''); setPhone(''); setEmail(''); setAddress(''); setValue('');
     setType(PROJECT_TYPES[0]); setSource('Website'); setRepId(teamIds[0]?.id ?? '');
+    setCategory('residential'); setListingStatus('none');
   };
 
   const submit = () => {
@@ -295,6 +323,8 @@ function AddLeadModal({
       value: Number(value.replace(/[^0-9.]/g, '')) || 0,
       source,
       repId: repId || teamIds[0]?.id || '',
+      category,
+      listingStatus,
     });
     reset();
   };
@@ -309,6 +339,20 @@ function AddLeadModal({
       <Field label="Email" value={email} onChangeText={setEmail} placeholder="jane@email.com" keyboardType="email-address" />
       <Field label="Property address" value={address} onChangeText={setAddress} placeholder="123 Main St, Ridgewood, NJ" />
       <ChipSelect label="Project type" options={PROJECT_TYPES} value={type} onChange={setType} />
+      <ChipSelect
+        label="Property type"
+        options={PROPERTY_CATEGORIES.map((c) => c.key)}
+        value={category}
+        onChange={setCategory}
+        renderLabel={(k) => PROPERTY_CATEGORIES.find((c) => c.key === k)?.label ?? k}
+      />
+      <ChipSelect
+        label="Listing status"
+        options={LISTING_STATUSES.map((s) => s.key)}
+        value={listingStatus}
+        onChange={setListingStatus}
+        renderLabel={(k) => LISTING_STATUSES.find((s) => s.key === k)?.label ?? k}
+      />
       <ChipSelect label="Source" options={['Website', 'Referral', 'Google Ads', 'Houzz', 'Instagram'] as string[]} value={source} onChange={setSource} />
       <ChipSelect
         label="Assign to"

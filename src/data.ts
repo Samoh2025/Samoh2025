@@ -2,9 +2,16 @@
  * This is a live app now — leads, team, projects, appointments and activity all
  * come from the Supabase database (see src/store.tsx), not from sample data.
  *
- * The only thing left here is where the door-knocking map centers. Change these
- * coordinates to your actual sales territory.
+ * The only thing here is the door-knocking territory: where the map opens and
+ * which towns it covers. Reps can click anywhere on the map to drop a door, so
+ * this just sets the starting view.
  */
 
-/** Center of the door-knocking territory (Ridgewood, NJ area). */
-export const TERRITORY_CENTER = { lat: 40.9793, lng: -74.1165 };
+/** Towns this sales team covers. */
+export const TERRITORY_TOWNS = ['Wayne, NJ', 'Cedar Grove, NJ', 'Ridgewood, NJ'];
+
+/** Where the map opens — centered to take in Wayne + Cedar Grove + Ridgewood. */
+export const TERRITORY_CENTER = { lat: 40.9188, lng: -74.2135 };
+
+/** Initial zoom (lower = wider view across the towns). */
+export const TERRITORY_ZOOM = 12;

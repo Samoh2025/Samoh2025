@@ -40,9 +40,17 @@ A complete sales command center for a home-improvement / construction sales team
   a pipeline funnel, a team leaderboard, upcoming appointments and a live activity feed.
 - **Leads & Pipeline** — add leads, **import contacts** (paste CSV / spreadsheet),
   filter by stage, and move them New → Contacted → Appointment → Quoted → Won / Lost.
-- **Door-Knock Map** — a live OpenStreetMap of the territory with a pin per door,
-  colored by knock outcome (interested / call back / no answer / not interested / not
-  knocked), and a route list reps update in the field — synced to the whole team.
+- **Door-Knock Map** — a live OpenStreetMap covering **Wayne, Cedar Grove & Ridgewood, NJ**.
+  **Tap anywhere to drop a door** — the address is filled in automatically and the dot is
+  **permanent and shared with every rep**. Tap a dot to log **notes**, set the **outcome**
+  (interested / call back / no answer / not interested), and tag it
+  **Residential/Commercial** with a **listing status** (For Sale, For Lease, Under Contract,
+  Pending Offer). Everything syncs live across the team.
+- **Calling (Twilio)** — tap 📞 on any lead or door to call. With Twilio connected the call
+  happens inside the app; otherwise it hands off to the phone's dialer. See `SETUP.md`.
+- **Do-Not-Call list** — the admin imports numbers that must never be called, and reps can
+  flag any contact; the app blocks calling them. (No public "every town" list exists — you
+  import what you obtain; see `SETUP.md`.)
 - **Sales Team** — Sam's reps with per-rep stats; add reps (they show **Invited** until
   they create their account, then **Active**).
 - **Projects** — jobs from *Estimating* through *Completed*, with values and status.
@@ -108,18 +116,25 @@ eas.json                # EAS build/deploy config
 .env.example            # local Supabase connection template
 supabase/
   schema.sql            # ← run once in Supabase: tables, security, triggers, realtime
+  config.toml           # per-function JWT settings for the Supabase CLI
+  functions/
+    twilio-token/       # mints a Twilio Voice token for signed-in users
+    twilio-voice/       # TwiML that connects the outbound call
 src/
   config.ts             # ← all of Sam's branding lives here
   supabase.ts           # Supabase client (reads EXPO_PUBLIC_SUPABASE_* env vars)
   auth.tsx              # real accounts via Supabase Auth
-  store.tsx             # live data + realtime sync + actions
+  store.tsx             # live data + realtime sync + actions (leads, doors, notes, DNC)
   mappers.ts            # database rows ↔ app types
+  dialer.tsx / .web.tsx # click-to-call (Twilio in the browser, device dialer fallback)
+  geocode.ts            # map coordinates → street address (OpenStreetMap)
   theme.ts              # colors, spacing, typography
-  types.ts              # data models (Lead, Rep, Project, Appointment…)
-  data.ts               # door-knock territory center
+  types.ts              # data models (Lead, Rep, Project, Appointment, LeadNote…)
+  data.ts               # door-knock territory (towns, center, zoom)
   nav.ts                # navigation routes
   ui.tsx                # shared components (Card, Button, Badge, Avatar, Modal…)
   Shell.tsx             # responsive sidebar / top-bar layout
+  MapView.web.tsx       # interactive Leaflet map (click-to-add doors)
   screens/              # Login, SignUp, SetupNeeded, Dashboard, Leads, DoorKnock,
                         #   Team, Projects, Appointments, Settings
 ```

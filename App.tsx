@@ -5,6 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { isSupabaseConfigured } from './src/supabase';
 import { StoreProvider } from './src/store';
 import { AuthProvider, useAuth } from './src/auth';
+import { DialerProvider } from './src/dialer';
 import { theme } from './src/theme';
 import { RouteKey } from './src/nav';
 import Shell from './src/Shell';
@@ -45,15 +46,17 @@ function Root() {
   return (
     <StoreProvider>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-        <Shell route={route} setRoute={setRoute}>
-          {route === 'dashboard' && <Dashboard go={setRoute} />}
-          {route === 'leads' && <Leads />}
-          {route === 'doorknock' && <DoorKnock />}
-          {route === 'team' && <Team />}
-          {route === 'projects' && <Projects />}
-          {route === 'appointments' && <Appointments />}
-          {route === 'settings' && <Settings onSignOut={signOut} />}
-        </Shell>
+        <DialerProvider>
+          <Shell route={route} setRoute={setRoute}>
+            {route === 'dashboard' && <Dashboard go={setRoute} />}
+            {route === 'leads' && <Leads />}
+            {route === 'doorknock' && <DoorKnock />}
+            {route === 'team' && <Team />}
+            {route === 'projects' && <Projects />}
+            {route === 'appointments' && <Appointments />}
+            {route === 'settings' && <Settings onSignOut={signOut} />}
+          </Shell>
+        </DialerProvider>
       </SafeAreaView>
     </StoreProvider>
   );

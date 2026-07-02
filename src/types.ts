@@ -34,6 +34,23 @@ export const PROJECT_TYPES: ProjectType[] = [
   'Roofing & Exterior',
 ];
 
+export type PropertyCategory = 'residential' | 'commercial';
+
+export const PROPERTY_CATEGORIES: { key: PropertyCategory; label: string }[] = [
+  { key: 'residential', label: 'Residential' },
+  { key: 'commercial', label: 'Commercial' },
+];
+
+export type ListingStatus = 'none' | 'for_sale' | 'for_lease' | 'under_contract' | 'pending';
+
+export const LISTING_STATUSES: { key: ListingStatus; label: string }[] = [
+  { key: 'none', label: 'No listing' },
+  { key: 'for_sale', label: 'For Sale' },
+  { key: 'for_lease', label: 'For Lease' },
+  { key: 'under_contract', label: 'Under Contract' },
+  { key: 'pending', label: 'Pending Offer' },
+];
+
 export type Lead = {
   id: string;
   name: string;
@@ -50,6 +67,20 @@ export type Lead = {
   lat?: number; // map position (door-knocking)
   lng?: number;
   knockStatus?: KnockStatus; // door-knocking outcome
+  category?: PropertyCategory; // residential vs commercial
+  listingStatus?: ListingStatus; // for sale / lease / under contract / pending
+  dnc?: boolean; // do-not-call flag
+};
+
+/** A timestamped field note logged at a door — shared with the whole team. */
+export type LeadNote = {
+  id: string;
+  leadId: string;
+  authorId?: string | null;
+  authorName: string;
+  text: string;
+  outcome?: KnockStatus | null;
+  createdAt: string;
 };
 
 export type KnockStatus = 'not_knocked' | 'no_answer' | 'callback' | 'interested' | 'not_interested';
@@ -131,4 +162,7 @@ export type AppData = {
   projects: Project[];
   appointments: Appointment[];
   activity: Activity[];
+  notes: LeadNote[];
+  /** Normalized (digits-only) do-not-call numbers imported by the admin. */
+  dnc: string[];
 };

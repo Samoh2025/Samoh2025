@@ -2,7 +2,7 @@
  * Translators between Supabase rows (snake_case) and the app's types
  * (camelCase). Kept in one place so auth and store never drift apart.
  */
-import { Lead, Rep, Project, Appointment, Activity } from './types';
+import { Lead, Rep, Project, Appointment, Activity, LeadNote } from './types';
 
 /* ------------------------------- reads -------------------------------- */
 
@@ -36,6 +36,19 @@ export const rowToLead = (r: any): Lead => ({
   lat: r.lat ?? undefined,
   lng: r.lng ?? undefined,
   knockStatus: r.knock_status ?? 'not_knocked',
+  category: r.category ?? 'residential',
+  listingStatus: r.listing_status ?? 'none',
+  dnc: !!r.dnc,
+});
+
+export const rowToNote = (r: any): LeadNote => ({
+  id: r.id,
+  leadId: r.lead_id,
+  authorId: r.author_id ?? null,
+  authorName: r.author_name ?? '',
+  text: r.text ?? '',
+  outcome: r.outcome ?? null,
+  createdAt: r.created_at,
 });
 
 export const rowToProject = (r: any): Project => ({
@@ -76,4 +89,10 @@ export function initialsFrom(name: string) {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('');
+}
+
+/** Reduce a phone number to comparable digits (last 10 for US numbers). */
+export function normalizePhone(phone: string): string {
+  const digits = (phone || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
 }

@@ -90,6 +90,80 @@ The admin email is set in two places and they must match:
 If you change it after the database was created, re-run the `handle_new_user`
 function block from `schema.sql` in the SQL Editor.
 
+---
+
+# The door-knock map, notes & property tags
+
+No setup needed — this works as soon as the backend (above) is connected:
+
+- **Tap anywhere on the map** to drop a door. The address fills in automatically
+  (from OpenStreetMap). The dot is **permanent and shared** — every rep sees it.
+- **Tap a dot** to log **notes** ("homeowner interested, call back Saturday"), set
+  the **outcome** (interested / call back / no answer / not interested), tag it
+  **Residential/Commercial**, and set a **listing status** (For Sale, For Lease,
+  Under Contract, Pending Offer). Everything syncs live to the whole team.
+- The map covers **Wayne, NJ · Cedar Grove, NJ · Ridgewood, NJ** by default. To
+  change the towns or where the map opens, edit `TERRITORY_TOWNS` / `TERRITORY_CENTER`
+  in `src/data.ts`.
+
+---
+
+# In-app calling (Twilio)
+
+Calls run through **Twilio**. Until it's connected, the 📞 button falls back to
+your phone's own dialer, so nothing breaks. To turn on real in-app calling:
+
+### A. Twilio account & number
+1. Create an account at **https://www.twilio.com** and (to call any number, not
+   just verified ones) upgrade from trial.
+2. **Buy a phone number** with *Voice* capability (Console → Phone Numbers → Buy).
+   Note it in E.164 form, e.g. `+19735551234`.
+3. Create an **API Key** (Console → Account → API keys & tokens → *Create API key*,
+   Standard). Copy the **SID** (`SK…`) and **Secret** (shown once).
+4. Create a **TwiML App** (Console → Voice → TwiML → TwiML Apps → *Create*):
+   - **Voice → Request URL:** `https://<your-project-ref>.functions.supabase.co/twilio-voice`  (method **POST**)
+   - Save and copy its **SID** (`AP…`).
+
+### B. Deploy the two functions (Supabase CLI)
+```bash
+npm install -g supabase
+supabase login
+supabase link --project-ref <your-project-ref>
+
+supabase functions deploy twilio-token           # signed-in users get a call token
+supabase functions deploy twilio-voice --no-verify-jwt   # Twilio calls this one
+```
+
+### C. Set the Twilio secrets
+```bash
+supabase secrets set \
+  TWILIO_ACCOUNT_SID=ACxxxxxxxx \
+  TWILIO_API_KEY_SID=SKxxxxxxxx \
+  TWILIO_API_KEY_SECRET=your-api-key-secret \
+  TWILIO_TWIML_APP_SID=APxxxxxxxx \
+  TWILIO_CALLER_ID=+19735551234
+```
+
+That's it. Reload the app, open a lead or a door, and tap 📞 — the call connects
+inside the app (allow the browser microphone prompt the first time). No Twilio
+credentials ever touch the app or the browser; they live only in the function.
+
+---
+
+# Do-Not-Call list
+
+There is **no public "do-not-call list for every town."** The National Registry
+is access-gated (you register at telemarketing.donotcall.gov and pull it by area
+code) and states keep separate lists. This app gives you the guardrail:
+
+- **Admin → Settings → Do-Not-Call list → Import:** paste numbers (any format).
+  The app then **blocks calling** any contact whose number is on the list.
+- Reps can also tap **Mark Do Not Call** on any door/lead.
+- You remain responsible for TCPA compliance; import the numbers you obtain and
+  keep them current.
+
+---
+
 ## Local development (optional)
 
 ```bash
@@ -107,3 +181,9 @@ npm run web
   the admin account (Sam's email).
 - **A new rep can't sign in.** If you kept email confirmation on, they need to
   click the confirmation link in their email first (step 4).
+- **📞 opens my phone dialer instead of calling in-app.** Twilio isn't connected
+  yet (or a secret is missing/typo'd). Re-check the *In-app calling* section; the
+  device dialer is the intended fallback until then.
+- **Twilio call says "application error" or drops instantly.** Your TwiML App's
+  Voice Request URL must point to the `twilio-voice` function and `TWILIO_CALLER_ID`
+  must be a Voice-enabled Twilio number you own.

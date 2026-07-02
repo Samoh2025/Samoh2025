@@ -1,12 +1,15 @@
-import React from 'react';
-import { View, Text, ScrollView, Linking } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, Linking, TextInput } from 'react-native';
 import { useAuth } from '../auth';
+import { useStore } from '../store';
 import { CONFIG } from '../config';
 import { theme } from '../theme';
-import { Card, Avatar, Badge, Button, SectionTitle } from '../ui';
+import { Card, Avatar, Badge, Button, Field, AppModal, SectionTitle } from '../ui';
 
 export default function Settings({ onSignOut }: { onSignOut: () => void }) {
   const { user, isAdmin } = useAuth();
+  const { data, importDnc } = useStore();
+  const [dncOpen, setDncOpen] = useState(false);
 
   const displayName = user?.name || CONFIG.admin.fullName;
   const displayEmail = user?.email || CONFIG.admin.email;
@@ -72,6 +75,28 @@ export default function Settings({ onSignOut }: { onSignOut: () => void }) {
         <Row label="Tagline" value={CONFIG.tagline} />
       </Card>
 
+      {/* Calling */}
+      <Card>
+        <SectionTitle>Calling</SectionTitle>
+        <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>
+          Tap 📞 on any lead or door to call. Once Twilio is connected (see SETUP.md), calls happen
+          right inside the app; until then, the button hands off to your phone's dialer.
+        </Text>
+      </Card>
+
+      {/* Do-Not-Call list (admin) */}
+      {isAdmin ? (
+        <Card>
+          <SectionTitle right={<Badge label={`${data.dnc.length} on list`} tone="neutral" />}>Do-Not-Call list</SectionTitle>
+          <Text style={{ color: theme.color.muted, fontSize: theme.font.small, marginBottom: 12 }}>
+            Import numbers that must never be called. The app blocks calling any contact whose number is on this
+            list (or that a rep marks Do Not Call). There's no public "every town" list — add numbers you obtain
+            (e.g. from the National Registry by area code, or your own opt-outs).
+          </Text>
+          <Button variant="outline" icon="⇪" title="Import Do-Not-Call numbers" onPress={() => setDncOpen(true)} />
+        </Card>
+      ) : null}
+
       {/* Account */}
       <Card>
         <SectionTitle>Account</SectionTitle>
@@ -80,6 +105,8 @@ export default function Settings({ onSignOut }: { onSignOut: () => void }) {
         </Text>
         <Button variant="danger" icon="⎋" title="Sign out" onPress={onSignOut} />
       </Card>
+
+      <ImportDncModal visible={dncOpen} onClose={() => setDncOpen(false)} onImport={importDnc} />
 
       <Text style={{ textAlign: 'center', color: theme.color.muted, fontSize: theme.font.tiny, marginTop: 8 }}>
         {CONFIG.brand} · {CONFIG.teamName} · {CONFIG.site.slug}
@@ -94,5 +121,66 @@ function Row({ label, value }: { label: string; value: string }) {
       <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>{label}</Text>
       <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>{value}</Text>
     </View>
+  );
+}
+
+function ImportDncModal({
+  visible,
+  onClose,
+  onImport,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onImport: (phones: string[]) => Promise<number>;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<number | null>(null);
+
+  const numbers = useMemo(
+    () => text.split(/[\n,;]+/).map((s) => s.trim()).filter((s) => s.replace(/\D/g, '').length >= 7),
+    [text],
+  );
+
+  const submit = async () => {
+    if (busy || numbers.length === 0) return;
+    setBusy(true);
+    const n = await onImport(numbers);
+    setBusy(false);
+    setDone(n);
+    setText('');
+  };
+
+  return (
+    <AppModal visible={visible} onClose={onClose} title="Import Do-Not-Call numbers">
+      <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>
+        Paste phone numbers (one per line, or separated by commas). Any format works — we match on the digits.
+      </Text>
+      <TextInput
+        value={text}
+        onChangeText={(t) => { setText(t); setDone(null); }}
+        placeholder={'(973) 555-0100\n201-555-0200\n9735550300'}
+        placeholderTextColor="#A9A9A9"
+        multiline
+        style={{
+          minHeight: 140,
+          backgroundColor: '#F6F6F6',
+          borderWidth: 1,
+          borderColor: theme.color.border,
+          borderRadius: theme.radius.md,
+          padding: 12,
+          fontSize: theme.font.small,
+          color: theme.color.text,
+          textAlignVertical: 'top',
+        }}
+      />
+      <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>
+        {done != null ? `✓ Added ${done} number${done === 1 ? '' : 's'} to the list` : `${numbers.length} number${numbers.length === 1 ? '' : 's'} detected`}
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Button title="Close" variant="outline" onPress={onClose} style={{ flex: 1 }} />
+        <Button title={busy ? 'Importing…' : 'Import'} variant="primary" icon="⇪" onPress={submit} style={{ flex: 1 }} />
+      </View>
+    </AppModal>
   );
 }

@@ -1,0 +1,13 @@
+# Supabase project config (used by the Supabase CLI when deploying functions).
+#
+# The Twilio "voice" function is called by Twilio's servers, which don't carry a
+# user login, so JWT verification must be off for it. The "token" function is
+# called by the signed-in browser and keeps verification ON (the default).
+
+project_id = "one-horizon-homes"
+
+[functions.twilio-token]
+verify_jwt = true
+
+[functions.twilio-voice]
+verify_jwt = false

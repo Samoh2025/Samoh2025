@@ -38,24 +38,57 @@ create unique index if not exists team_members_email_key
   on public.team_members (lower(email));
 
 create table if not exists public.leads (
-  id           uuid primary key default gen_random_uuid(),
-  name         text not null,
-  phone        text not null default '',
-  email        text not null default '',
-  address      text not null default '',
-  type         text not null default 'Kitchen Remodel',
-  value        numeric not null default 0,
-  stage        text not null default 'new'
-                 check (stage in ('new','contacted','appointment','quoted','won','lost')),
-  source       text not null default 'Manual',
-  rep_id       uuid references public.team_members (id) on delete set null,
-  note         text,
-  lat          double precision,
-  lng          double precision,
-  knock_status text not null default 'not_knocked'
-                 check (knock_status in ('not_knocked','no_answer','callback','interested','not_interested')),
-  created_at   timestamptz not null default now(),
-  created_by   uuid default auth.uid()
+  id             uuid primary key default gen_random_uuid(),
+  name           text not null,
+  phone          text not null default '',
+  email          text not null default '',
+  address        text not null default '',
+  type           text not null default 'Kitchen Remodel',
+  value          numeric not null default 0,
+  stage          text not null default 'new'
+                   check (stage in ('new','contacted','appointment','quoted','won','lost')),
+  source         text not null default 'Manual',
+  rep_id         uuid references public.team_members (id) on delete set null,
+  note           text,
+  lat            double precision,
+  lng            double precision,
+  knock_status   text not null default 'not_knocked'
+                   check (knock_status in ('not_knocked','no_answer','callback','interested','not_interested')),
+  -- Property tagging for the door-knock map.
+  category       text not null default 'residential'
+                   check (category in ('residential','commercial')),
+  listing_status text not null default 'none'
+                   check (listing_status in ('none','for_sale','for_lease','under_contract','pending')),
+  dnc            boolean not null default false,   -- do-not-call flag for this contact
+  created_at     timestamptz not null default now(),
+  created_by     uuid default auth.uid()
+);
+
+-- Bring existing databases up to date (safe to run repeatedly).
+alter table public.leads add column if not exists category text not null default 'residential';
+alter table public.leads add column if not exists listing_status text not null default 'none';
+alter table public.leads add column if not exists dnc boolean not null default false;
+
+-- A running log of what happened at each door — visible to the whole team.
+create table if not exists public.lead_notes (
+  id          uuid primary key default gen_random_uuid(),
+  lead_id     uuid not null references public.leads (id) on delete cascade,
+  author_id   uuid,
+  author_name text not null default '',
+  text        text not null,
+  outcome     text,   -- optional knock outcome captured with the note
+  created_at  timestamptz not null default now()
+);
+create index if not exists lead_notes_lead_id_idx on public.lead_notes (lead_id);
+
+-- Imported Do-Not-Call numbers. A call is blocked if the contact is flagged
+-- (leads.dnc) or its number appears here.
+create table if not exists public.dnc_numbers (
+  id         uuid primary key default gen_random_uuid(),
+  phone      text not null unique,   -- normalized to digits only
+  label      text,
+  source     text not null default 'import',
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.projects (
@@ -113,6 +146,8 @@ alter table public.leads        enable row level security;
 alter table public.projects     enable row level security;
 alter table public.appointments enable row level security;
 alter table public.activity     enable row level security;
+alter table public.lead_notes   enable row level security;
+alter table public.dnc_numbers  enable row level security;
 
 -- team_members: everyone signed in can see the roster. Only the admin can add
 -- or remove people; a member may edit their own row (name, phone, location).
@@ -139,7 +174,7 @@ create policy tm_delete on public.team_members
 do $$
 declare t text;
 begin
-  foreach t in array array['leads','projects','appointments','activity'] loop
+  foreach t in array array['leads','projects','appointments','activity','lead_notes','dnc_numbers'] loop
     execute format('drop policy if exists %I_all on public.%I;', t, t);
     execute format(
       'create policy %I_all on public.%I for all to authenticated using (true) with check (true);',
@@ -208,7 +243,7 @@ create trigger on_auth_user_created
 do $$
 declare t text;
 begin
-  foreach t in array array['team_members','leads','projects','appointments','activity'] loop
+  foreach t in array array['team_members','leads','projects','appointments','activity','lead_notes','dnc_numbers'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I;', t);
     exception when duplicate_object then

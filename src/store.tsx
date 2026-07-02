@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { View, ActivityIndicator, Text } from 'react-native';
-import { AppData, Lead, LeadStage, Rep, ProjectStatus, KnockStatus } from './types';
+import {
+  AppData,
+  Lead,
+  LeadStage,
+  Rep,
+  ProjectStatus,
+  KnockStatus,
+  PropertyCategory,
+  ListingStatus,
+} from './types';
 import { TERRITORY_CENTER } from './data';
 import { theme } from './theme';
 import { supabase } from './supabase';
@@ -10,7 +19,9 @@ import {
   rowToProject,
   rowToAppointment,
   rowToActivity,
+  rowToNote,
   initialsFrom,
+  normalizePhone,
 } from './mappers';
 
 /**
@@ -21,6 +32,25 @@ import {
  * leads, stage moves and door-knock updates as they happen. Every mutation
  * writes to the database; realtime brings the change back to all clients.
  */
+
+export type NewDoor = {
+  address: string;
+  lat: number;
+  lng: number;
+  name?: string;
+  phone?: string;
+  category?: PropertyCategory;
+  listingStatus?: ListingStatus;
+  knockStatus?: KnockStatus;
+  repId?: string;
+};
+
+export type NoteInput = {
+  text: string;
+  outcome?: KnockStatus;
+  authorId?: string | null;
+  authorName?: string;
+};
 
 type Store = {
   data: AppData;
@@ -33,6 +63,15 @@ type Store = {
   toggleAppointment: (id: string) => Promise<void>;
   setKnockStatus: (id: string, status: KnockStatus) => Promise<void>;
   importLeads: (rows: ImportRow[]) => Promise<number>;
+  /** Drop a door on the map (from a click). Returns the new lead id. */
+  addDoor: (d: NewDoor) => Promise<string | null>;
+  addNote: (leadId: string, note: NoteInput) => Promise<void>;
+  setCategory: (id: string, category: PropertyCategory) => Promise<void>;
+  setListingStatus: (id: string, status: ListingStatus) => Promise<void>;
+  setDnc: (id: string, dnc: boolean) => Promise<void>;
+  importDnc: (phones: string[]) => Promise<number>;
+  /** True if this number should not be called (imported list or a lead flag). */
+  isDnc: (phone?: string) => boolean;
 };
 
 export type ImportRow = {
@@ -47,7 +86,7 @@ export type ImportRow = {
 
 const StoreContext = createContext<Store | null>(null);
 
-const EMPTY: AppData = { leads: [], team: [], projects: [], appointments: [], activity: [] };
+const EMPTY: AppData = { leads: [], team: [], projects: [], appointments: [], activity: [], notes: [], dnc: [] };
 
 // Grayscale palette (black & white brand) for rep avatars.
 const PALETTE = ['#111111', '#3A3A3A', '#5C5C5C', '#808080', '#262626', '#6E6E6E'];
@@ -91,12 +130,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     // 1) Initial load of everything the team can see.
     (async () => {
-      const [leads, team, projects, appointments, activity] = await Promise.all([
+      const [leads, team, projects, appointments, activity, notes, dnc] = await Promise.all([
         sb.from('leads').select('*').order('created_at', { ascending: false }),
         sb.from('team_members').select('*').order('created_at', { ascending: true }),
         sb.from('projects').select('*').order('created_at', { ascending: true }),
         sb.from('appointments').select('*').order('date', { ascending: true }),
         sb.from('activity').select('*').order('at', { ascending: false }),
+        sb.from('lead_notes').select('*').order('created_at', { ascending: false }),
+        sb.from('dnc_numbers').select('phone'),
       ]);
       if (!mounted.current) return;
       setData({
@@ -105,6 +146,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         projects: (projects.data ?? []).map(rowToProject),
         appointments: (appointments.data ?? []).map(rowToAppointment),
         activity: (activity.data ?? []).map(rowToActivity),
+        notes: (notes.data ?? []).map(rowToNote),
+        dnc: (dnc.data ?? []).map((r: any) => normalizePhone(r.phone)),
       });
       setLoading(false);
     })();
@@ -126,6 +169,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         });
       };
 
+    // do-not-call numbers are a plain string[] of normalized phones.
+    const applyDnc = (payload: any) => {
+      setData((d) => {
+        if (payload.eventType === 'DELETE') {
+          const gone = normalizePhone(payload.old?.phone ?? '');
+          return { ...d, dnc: d.dnc.filter((p) => p !== gone) };
+        }
+        const phone = normalizePhone(payload.new?.phone ?? '');
+        return d.dnc.includes(phone) ? d : { ...d, dnc: [...d.dnc, phone] };
+      });
+    };
+
     const channel = sb
       .channel('ohh-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, applyChange('leads', rowToLead, true))
@@ -133,6 +188,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, applyChange('projects', rowToProject, false))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, applyChange('appointments', rowToAppointment, false))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity' }, applyChange('activity', rowToActivity, true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lead_notes' }, applyChange('notes', rowToNote, true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dnc_numbers' }, applyDnc)
       .subscribe();
 
     return () => {
@@ -275,6 +332,98 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           logActivity(`Imported ${inserted.length} contacts into leads`, 'lead');
         }
         return inserted?.length ?? 0;
+      },
+
+      addDoor: async (door) => {
+        if (!supabase) return null;
+        const shortName = door.name?.trim() || door.address.split(',')[0] || 'New door';
+        const { data: row } = await supabase
+          .from('leads')
+          .insert({
+            name: shortName,
+            phone: door.phone ?? '',
+            address: door.address,
+            type: 'Kitchen Remodel',
+            value: 0,
+            stage: 'new',
+            source: 'Door-knock',
+            rep_id: door.repId || null,
+            knock_status: door.knockStatus ?? 'not_knocked',
+            category: door.category ?? 'residential',
+            listing_status: door.listingStatus ?? 'none',
+            lat: door.lat,
+            lng: door.lng,
+          })
+          .select()
+          .single();
+        if (!row) return null;
+        const lead = rowToLead(row);
+        setData((d) => ({ ...d, leads: upsertBy(d.leads, lead, true) }));
+        logActivity(`Door added on the map: ${lead.address}`, 'lead');
+        return lead.id;
+      },
+
+      addNote: async (leadId, note) => {
+        if (!supabase) return;
+        const text = note.text.trim();
+        if (!text) return;
+        const { data: row } = await supabase
+          .from('lead_notes')
+          .insert({
+            lead_id: leadId,
+            author_id: note.authorId ?? null,
+            author_name: note.authorName ?? 'Team member',
+            text,
+            outcome: note.outcome ?? null,
+          })
+          .select()
+          .single();
+        if (row) {
+          setData((d) => ({ ...d, notes: upsertBy(d.notes, rowToNote(row), true) }));
+        }
+        if (note.outcome) {
+          setData((d) => ({ ...d, leads: d.leads.map((l) => (l.id === leadId ? { ...l, knockStatus: note.outcome } : l)) }));
+          await supabase.from('leads').update({ knock_status: note.outcome }).eq('id', leadId);
+        }
+      },
+
+      setCategory: async (id, category) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, leads: d.leads.map((l) => (l.id === id ? { ...l, category } : l)) }));
+        await supabase.from('leads').update({ category }).eq('id', id);
+      },
+
+      setListingStatus: async (id, status) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, leads: d.leads.map((l) => (l.id === id ? { ...l, listingStatus: status } : l)) }));
+        await supabase.from('leads').update({ listing_status: status }).eq('id', id);
+      },
+
+      setDnc: async (id, dnc) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, leads: d.leads.map((l) => (l.id === id ? { ...l, dnc } : l)) }));
+        await supabase.from('leads').update({ dnc }).eq('id', id);
+      },
+
+      importDnc: async (phones) => {
+        if (!supabase) return 0;
+        const clean = Array.from(new Set(phones.map(normalizePhone).filter((p) => p.length >= 7)));
+        if (clean.length === 0) return 0;
+        const { data: inserted } = await supabase
+          .from('dnc_numbers')
+          .upsert(clean.map((phone) => ({ phone })), { onConflict: 'phone', ignoreDuplicates: true })
+          .select('phone');
+        setData((d) => ({ ...d, dnc: Array.from(new Set([...d.dnc, ...clean])) }));
+        logActivity(`Imported ${clean.length} numbers into the Do-Not-Call list`, 'team');
+        return inserted?.length ?? clean.length;
+      },
+
+      isDnc: (phone) => {
+        if (!phone) return false;
+        const n = normalizePhone(phone);
+        if (!n) return false;
+        if (data.dnc.includes(n)) return true;
+        return data.leads.some((l) => l.dnc && normalizePhone(l.phone) === n);
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -31,16 +31,21 @@ function styleFor(status?: string) {
   }
 }
 
-export default function MapView({ points, center, height = 460, onSelect }: MapViewProps) {
+export default function MapView({ points, center, zoom = 12, height = 460, onSelect, onMapClick }: MapViewProps) {
   const elRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
+  // Keep the latest callbacks in refs so the once-created map uses fresh values.
+  const clickRef = useRef(onMapClick);
+  clickRef.current = onMapClick;
+  const selectRef = useRef(onSelect);
+  selectRef.current = onSelect;
 
   // Create the map once.
   useEffect(() => {
     ensureLeafletCss();
     if (!elRef.current || mapRef.current) return;
-    const map = L.map(elRef.current, { scrollWheelZoom: true }).setView([center.lat, center.lng], 13);
+    const map = L.map(elRef.current, { scrollWheelZoom: true }).setView([center.lat, center.lng], zoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
@@ -48,6 +53,11 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     setTimeout(() => map.invalidateSize(), 50);
+
+    // Tap an empty spot to drop a new door.
+    map.on('click', (e: any) => {
+      clickRef.current?.(e.latlng.lat, e.latlng.lng);
+    });
 
     // "My location" for the rep currently knocking.
     const nav: any = (globalThis as any).navigator;
@@ -85,13 +95,17 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
     points.forEach((p) => {
       if (p.lat == null || p.lng == null) return;
       const m = L.circleMarker([p.lat, p.lng], styleFor(p.status));
-      m.bindPopup(
+      m.bindTooltip(
         `<strong>${escapeHtml(p.label)}</strong>${p.sub ? `<br/>${escapeHtml(p.sub)}` : ''}`,
       );
-      if (onSelect) m.on('click', () => onSelect(p.id));
+      // Clicking a dot opens its details (and must not also drop a new door).
+      m.on('click', (e: any) => {
+        L.DomEvent.stopPropagation(e);
+        selectRef.current?.(p.id);
+      });
       m.addTo(layer);
     });
-  }, [points, onSelect]);
+  }, [points]);
 
   return <div ref={elRef} style={{ width: '100%', height, borderRadius: 14, overflow: 'hidden' }} />;
 }

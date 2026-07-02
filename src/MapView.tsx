@@ -14,8 +14,11 @@ export type MapPoint = {
 export type MapViewProps = {
   points: MapPoint[];
   center: { lat: number; lng: number };
+  zoom?: number;
   height?: number;
   onSelect?: (id: string) => void;
+  /** Fired when the rep taps an empty spot on the map (web only). */
+  onMapClick?: (lat: number, lng: number) => void;
 };
 
 /**
