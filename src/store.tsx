@@ -65,6 +65,8 @@ type Store = {
   importLeads: (rows: ImportRow[]) => Promise<number>;
   /** Drop a door on the map (from a click). Returns the new lead id. */
   addDoor: (d: NewDoor) => Promise<string | null>;
+  /** Bulk-add already-geocoded properties (from a list import). Returns count. */
+  importDoors: (doors: NewDoor[]) => Promise<number>;
   addNote: (leadId: string, note: NoteInput) => Promise<void>;
   setCategory: (id: string, category: PropertyCategory) => Promise<void>;
   setListingStatus: (id: string, status: ListingStatus) => Promise<void>;
@@ -361,6 +363,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setData((d) => ({ ...d, leads: upsertBy(d.leads, lead, true) }));
         logActivity(`Door added on the map: ${lead.address}`, 'lead');
         return lead.id;
+      },
+
+      importDoors: async (doors) => {
+        if (!supabase || doors.length === 0) return 0;
+        const payload = doors.map((d) => ({
+          name: d.name?.trim() || d.address.split(',')[0] || 'Property',
+          phone: d.phone ?? '',
+          address: d.address,
+          type: 'Kitchen Remodel',
+          value: 0,
+          stage: 'new',
+          source: 'Import',
+          rep_id: d.repId || null,
+          knock_status: d.knockStatus ?? 'not_knocked',
+          category: d.category ?? 'residential',
+          listing_status: d.listingStatus ?? 'none',
+          lat: d.lat,
+          lng: d.lng,
+        }));
+        const { data: inserted } = await supabase.from('leads').insert(payload).select();
+        if (inserted?.length) {
+          setData((d) => {
+            let next = d.leads;
+            for (const row of inserted) next = upsertBy(next, rowToLead(row), true);
+            return { ...d, leads: next };
+          });
+          logActivity(`Imported ${inserted.length} properties onto the map`, 'lead');
+        }
+        return inserted?.length ?? 0;
       },
 
       addNote: async (leadId, note) => {

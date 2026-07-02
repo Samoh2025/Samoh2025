@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { useStore } from '../store';
 import { useAuth } from '../auth';
 import { useDialer } from '../dialer';
@@ -26,7 +26,8 @@ import {
   Lead,
 } from '../types';
 import { TERRITORY_CENTER, TERRITORY_ZOOM, TERRITORY_TOWNS } from '../data';
-import { reverseGeocode } from '../geocode';
+import { reverseGeocode, geocodeAddress } from '../geocode';
+import type { NewDoor } from '../store';
 import MapView, { MapPoint } from '../MapView';
 
 const LEGEND: { status: KnockStatus; label: string }[] = [
@@ -52,7 +53,7 @@ const listingLabel = (s?: ListingStatus) => LISTING_STATUSES.find((x) => x.key =
 const knockLabel = (s?: KnockStatus) => KNOCK_STATUSES.find((x) => x.key === (s ?? 'not_knocked'))?.label ?? '';
 
 export default function DoorKnock() {
-  const { data, addDoor, setKnockStatus, setCategory, setListingStatus, setDnc, addNote, isDnc } = useStore();
+  const { data, addDoor, importDoors, setKnockStatus, setCategory, setListingStatus, setDnc, addNote, isDnc } = useStore();
   const { user } = useAuth();
   const { leads } = data;
 
@@ -60,6 +61,7 @@ export default function DoorKnock() {
   const [listFilter, setListFilter] = useState<'all' | ListingStatus>('all');
   const [pending, setPending] = useState<{ lat: number; lng: number; address: string; loading: boolean } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const doors = useMemo(
     () =>
@@ -98,11 +100,14 @@ export default function DoorKnock() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-      <View>
-        <Text style={{ fontSize: theme.font.h2, fontWeight: '800', color: theme.color.text }}>Door-Knocking Map</Text>
-        <Text style={{ color: theme.color.muted, marginTop: 2 }}>
-          {TERRITORY_TOWNS.join(' · ')} — {doors.length} doors in the field
-        </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <View>
+          <Text style={{ fontSize: theme.font.h2, fontWeight: '800', color: theme.color.text }}>Door-Knocking Map</Text>
+          <Text style={{ color: theme.color.muted, marginTop: 2 }}>
+            {TERRITORY_TOWNS.join(' · ')} — {doors.length} doors in the field
+          </Text>
+        </View>
+        <Button title="Import list" icon="⇪" variant="outline" onPress={() => setImportOpen(true)} />
       </View>
 
       {/* Filters */}
@@ -232,6 +237,9 @@ export default function DoorKnock() {
         }
         blockedCall={selected ? isDnc(selected.phone) || !!selected.dnc : false}
       />
+
+      {/* Import a list of properties (addresses + statuses) */}
+      <ImportPropertiesModal visible={importOpen} onClose={() => setImportOpen(false)} onImport={importDoors} />
     </ScrollView>
   );
 }
@@ -435,6 +443,165 @@ function DoorDetailsModal({
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Button title="Close" variant="outline" onPress={onClose} style={{ flex: 1 }} />
         <Button title="Save note" variant="primary" icon="＋" onPress={addNote} style={{ flex: 1 }} />
+      </View>
+    </AppModal>
+  );
+}
+
+/* --------------------------- Import properties ------------------------- */
+
+type ParsedRow = { address: string; listingStatus: ListingStatus; category: PropertyCategory; name?: string; phone?: string };
+
+function toListing(s: string): ListingStatus {
+  const t = (s || '').toLowerCase();
+  if (/under\s*contract|\bu\/?c\b|attorney review/.test(t)) return 'under_contract';
+  if (/pending|under offer|accepted offer/.test(t)) return 'pending';
+  if (/lease|rent/.test(t)) return 'for_lease';
+  if (/for\s*sale|active|listed|\bsale\b/.test(t)) return 'for_sale';
+  return 'none';
+}
+
+function toCategory(s: string): PropertyCategory {
+  return /commercial|retail|office|industrial|business|storefront|\bshop\b|\bstore\b/.test((s || '').toLowerCase())
+    ? 'commercial'
+    : 'residential';
+}
+
+/** Parse a pasted spreadsheet/CSV of properties into rows. */
+export function parseProperties(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const split = (line: string) => line.split(delim).map((c) => c.trim());
+
+  const first = split(lines[0]).map((h) => h.toLowerCase());
+  const hasHeader = first.some((h) => /address|status|type|name|phone/.test(h));
+  const headers = hasHeader ? first : [];
+  const body = hasHeader ? lines.slice(1) : lines;
+
+  const col = (keys: string[]) => headers.findIndex((h) => keys.some((k) => h.includes(k)));
+  const ai = col(['address', 'street']);
+  const si = col(['status', 'stage']);
+  const ti = col(['type', 'category', 'class']);
+  const ni = col(['name', 'owner', 'business']);
+  const pi = col(['phone', 'mobile', 'cell']);
+
+  return body
+    .map((line) => {
+      const c = split(line);
+      const pick = (i: number) => (i >= 0 ? c[i] ?? '' : '');
+      // Without headers, the whole line is the address; look for a status word in it.
+      const address = hasHeader ? pick(ai) || c[0] || '' : line;
+      const statusText = hasHeader ? pick(si) : line;
+      const typeText = hasHeader ? pick(ti) : line;
+      return {
+        address: address.trim(),
+        listingStatus: toListing(statusText),
+        category: toCategory(typeText),
+        name: pick(ni) || undefined,
+        phone: pick(pi) || undefined,
+      } as ParsedRow;
+    })
+    .filter((r) => r.address && r.address.length > 4);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function ImportPropertiesModal({
+  visible,
+  onClose,
+  onImport,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onImport: (doors: NewDoor[]) => Promise<number>;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<{ added: number; skipped: number } | null>(null);
+
+  const parsed = useMemo(() => parseProperties(text), [text]);
+  const sample =
+    'Address, Status, Type\n12 Oak St, Wayne, NJ, Pending, Residential\n55 Pompton Ave, Cedar Grove, NJ, Under Contract, Commercial';
+
+  const submit = async () => {
+    if (busy || parsed.length === 0) return;
+    setBusy(true);
+    setResult(null);
+    const doors: NewDoor[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      setProgress({ done: i, total: parsed.length });
+      const geo = await geocodeAddress(parsed[i].address);
+      if (geo) {
+        doors.push({
+          address: parsed[i].address,
+          lat: geo.lat,
+          lng: geo.lng,
+          name: parsed[i].name,
+          phone: parsed[i].phone,
+          category: parsed[i].category,
+          listingStatus: parsed[i].listingStatus,
+        });
+      }
+      if (i < parsed.length - 1) await sleep(1100); // respect OpenStreetMap's rate limit
+    }
+    setProgress(null);
+    const added = await onImport(doors);
+    setBusy(false);
+    setResult({ added, skipped: parsed.length - doors.length });
+    if (added > 0) setText('');
+  };
+
+  return (
+    <AppModal visible={visible} onClose={onClose} title="Import a property list">
+      <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>
+        Paste a list from a spreadsheet or CSV — one property per line. Include an{' '}
+        <Text style={{ fontWeight: '800' }}>Address</Text> column, and optionally{' '}
+        <Text style={{ fontWeight: '800' }}>Status</Text> (For Sale, For Lease, Under Contract, Pending) and{' '}
+        <Text style={{ fontWeight: '800' }}>Type</Text> (Residential/Commercial). Each address is placed on the map
+        at its real location.
+      </Text>
+      <TextInput
+        value={text}
+        onChangeText={(t) => { setText(t); setResult(null); }}
+        placeholder={sample}
+        placeholderTextColor="#A9A9A9"
+        multiline
+        editable={!busy}
+        style={{
+          minHeight: 150,
+          backgroundColor: '#F6F6F6',
+          borderWidth: 1,
+          borderColor: theme.color.border,
+          borderRadius: theme.radius.md,
+          padding: 12,
+          fontSize: theme.font.small,
+          color: theme.color.text,
+          textAlignVertical: 'top',
+        }}
+      />
+      <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>
+        {busy && progress
+          ? `Locating addresses… ${progress.done + 1} of ${progress.total}`
+          : result
+          ? `✓ Added ${result.added} to the map${result.skipped ? ` · ${result.skipped} couldn't be located` : ''}`
+          : `${parsed.length} propert${parsed.length === 1 ? 'y' : 'ies'} detected`}
+      </Text>
+      {parsed.length > 60 && !busy ? (
+        <Text style={{ color: theme.color.muted, fontSize: theme.font.tiny }}>
+          Large lists are placed about one per second (free map service limit), so this can take a few minutes — keep this window open.
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Button title="Close" variant="outline" onPress={onClose} style={{ flex: 1 }} />
+        <Button
+          title={busy ? 'Importing…' : `Import ${parsed.length || ''}`.trim()}
+          variant="primary"
+          icon="⇪"
+          onPress={submit}
+          style={{ flex: 1 }}
+        />
       </View>
     </AppModal>
   );
