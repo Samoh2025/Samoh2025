@@ -12,7 +12,13 @@ export const CONFIG = {
   brand: 'One Horizon Homes',
   tagline: 'Design • Build • Renovate',
 
-  /** The admin who owns this deployment. */
+  /**
+   * The admin who owns this deployment.
+   *
+   * `email` is the address granted the Admin role automatically on sign-up.
+   * It must match the same value in `supabase/schema.sql` (handle_new_user).
+   * As a fallback, whoever creates the very first account also becomes admin.
+   */
   admin: {
     name: 'Sam',
     fullName: 'Sam Horizon',
@@ -30,8 +36,6 @@ export const CONFIG = {
     url: 'https://sam-one-horizon-homes.expo.app',
   },
 
-  /** Demo auth: this build runs standalone with no backend. */
-  demo: true,
 } as const;
 
 export type AppConfig = typeof CONFIG;

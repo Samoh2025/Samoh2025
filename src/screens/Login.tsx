@@ -9,13 +9,17 @@ export default function Login({ onSignUp }: { onSignUp: () => void }) {
   const { width } = useWindowDimensions();
   const wide = width >= 860;
   const { signIn } = useAuth();
-  const [email, setEmail] = useState<string>(CONFIG.admin.email);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (busy) return;
     setError(null);
-    const res = signIn(email, password);
+    setBusy(true);
+    const res = await signIn(email, password);
+    setBusy(false);
     if (!res.ok) setError(res.error ?? 'Could not sign in.');
     // On success the app switches to the dashboard automatically (auth state changes).
   };
@@ -54,9 +58,9 @@ export default function Login({ onSignUp }: { onSignUp: () => void }) {
           </Text>
           <View style={{ gap: 14 }}>
             <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@onehorizonhomes.com" keyboardType="email-address" />
-            <Field label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" />
+            <Field label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry />
             {error ? <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>⚠ {error}</Text> : null}
-            <Button title="Sign in" variant="primary" icon="→" onPress={submit} />
+            <Button title={busy ? 'Signing in…' : 'Sign in'} variant="primary" icon="→" onPress={submit} />
             <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4 }}>
               <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>New here?</Text>
               <Text onPress={onSignUp} style={{ color: theme.color.text, fontWeight: '800', fontSize: theme.font.small }}>

@@ -62,6 +62,8 @@ export const KNOCK_STATUSES: { key: KnockStatus; label: string }[] = [
   { key: 'not_interested', label: 'Not interested' },
 ];
 
+export type Role = 'admin' | 'rep';
+
 export type Rep = {
   id: string;
   name: string;
@@ -70,7 +72,11 @@ export type Rep = {
   phone: string;
   initials: string;
   color: string;
-  /** Approx. live location for the door-knocker map (demo). */
+  /** 'admin' (Sam) or 'rep'. */
+  role?: Role;
+  /** Login account id once this person has signed up; null while "invited". */
+  userId?: string | null;
+  /** Approx. last-known location for the door-knocker map. */
   lat?: number;
   lng?: number;
 };

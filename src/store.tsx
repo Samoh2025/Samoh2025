@@ -1,54 +1,38 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { View, ActivityIndicator, Text } from 'react-native';
 import { AppData, Lead, LeadStage, Rep, ProjectStatus, KnockStatus } from './types';
-import { seedData, TERRITORY_CENTER } from './data';
-import { CONFIG } from './config';
+import { TERRITORY_CENTER } from './data';
+import { theme } from './theme';
+import { supabase } from './supabase';
+import {
+  rowToLead,
+  rowToRep,
+  rowToProject,
+  rowToAppointment,
+  rowToActivity,
+  initialsFrom,
+} from './mappers';
 
-const STORAGE_KEY = `ohh:${CONFIG.site.slug}:v1`;
-
-/** Tiny cross-platform persistence using web localStorage when available. */
-const persist = {
-  load(): AppData | null {
-    try {
-      if (typeof localStorage === 'undefined') return null;
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as AppData) : null;
-    } catch {
-      return null;
-    }
-  },
-  save(data: AppData) {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      /* ignore */
-    }
-  },
-  clear() {
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-  },
-};
-
-let _seq = 0;
-const uid = (p: string) => `${p}_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
-
-const nowISO = () => new Date().toISOString();
+/**
+ * Live, shared data — backed by Supabase.
+ *
+ * On sign-in we load the team's data from the database, then subscribe to
+ * realtime changes so every device (Sam's laptop, each rep's phone) sees new
+ * leads, stage moves and door-knock updates as they happen. Every mutation
+ * writes to the database; realtime brings the change back to all clients.
+ */
 
 type Store = {
   data: AppData;
-  addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'stage'> & { stage?: LeadStage }) => void;
-  setLeadStage: (id: string, stage: LeadStage) => void;
-  deleteLead: (id: string) => void;
-  addRep: (r: Omit<Rep, 'id' | 'initials' | 'color'>) => void;
-  setProjectStatus: (id: string, status: ProjectStatus) => void;
-  toggleAppointment: (id: string) => void;
-  setKnockStatus: (id: string, status: KnockStatus) => void;
-  importLeads: (rows: ImportRow[]) => number;
-  resetDemo: () => void;
+  loading: boolean;
+  addLead: (l: Omit<Lead, 'id' | 'createdAt' | 'stage'> & { stage?: LeadStage }) => Promise<void>;
+  setLeadStage: (id: string, stage: LeadStage) => Promise<void>;
+  deleteLead: (id: string) => Promise<void>;
+  addRep: (r: Omit<Rep, 'id' | 'initials' | 'color'>) => Promise<{ ok: boolean; error?: string }>;
+  setProjectStatus: (id: string, status: ProjectStatus) => Promise<void>;
+  toggleAppointment: (id: string) => Promise<void>;
+  setKnockStatus: (id: string, status: KnockStatus) => Promise<void>;
+  importLeads: (rows: ImportRow[]) => Promise<number>;
 };
 
 export type ImportRow = {
@@ -63,10 +47,12 @@ export type ImportRow = {
 
 const StoreContext = createContext<Store | null>(null);
 
-// Grayscale palette (black & white brand)
+const EMPTY: AppData = { leads: [], team: [], projects: [], appointments: [], activity: [] };
+
+// Grayscale palette (black & white brand) for rep avatars.
 const PALETTE = ['#111111', '#3A3A3A', '#5C5C5C', '#808080', '#262626', '#6E6E6E'];
 
-/** Place a point near the territory center so imported/new leads show on the map. */
+/** Place a point near the territory center so new/imported leads show on the map. */
 function nearTerritory() {
   return {
     lat: TERRITORY_CENTER.lat + (Math.random() - 0.5) * 0.04,
@@ -74,99 +60,197 @@ function nearTerritory() {
   };
 }
 
-function initialsFrom(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('');
+/** Insert-or-replace a row in an array by id. */
+function upsertBy<T extends { id: string }>(arr: T[], row: T, prepend: boolean): T[] {
+  const i = arr.findIndex((x) => x.id === row.id);
+  if (i >= 0) {
+    const copy = arr.slice();
+    copy[i] = row;
+    return copy;
+  }
+  return prepend ? [row, ...arr] : [...arr, row];
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<AppData>(() => persist.load() ?? seedData());
+  const [data, setData] = useState<AppData>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const mounted = useRef(true);
+
+  // Fire-and-forget: record something on the activity feed.
+  const logActivity = (text: string, kind: AppData['activity'][number]['kind']) => {
+    supabase?.from('activity').insert({ text, kind }).then(undefined, () => {});
+  };
 
   useEffect(() => {
-    persist.save(data);
-  }, [data]);
+    mounted.current = true;
+    const sb = supabase;
+    if (!sb) {
+      setLoading(false);
+      return;
+    }
+
+    // 1) Initial load of everything the team can see.
+    (async () => {
+      const [leads, team, projects, appointments, activity] = await Promise.all([
+        sb.from('leads').select('*').order('created_at', { ascending: false }),
+        sb.from('team_members').select('*').order('created_at', { ascending: true }),
+        sb.from('projects').select('*').order('created_at', { ascending: true }),
+        sb.from('appointments').select('*').order('date', { ascending: true }),
+        sb.from('activity').select('*').order('at', { ascending: false }),
+      ]);
+      if (!mounted.current) return;
+      setData({
+        leads: (leads.data ?? []).map(rowToLead),
+        team: (team.data ?? []).map(rowToRep),
+        projects: (projects.data ?? []).map(rowToProject),
+        appointments: (appointments.data ?? []).map(rowToAppointment),
+        activity: (activity.data ?? []).map(rowToActivity),
+      });
+      setLoading(false);
+    })();
+
+    // 2) Live updates. One channel, one handler per table.
+    const applyChange =
+      (
+        key: keyof AppData,
+        mapper: (r: any) => { id: string },
+        prepend: boolean,
+      ) =>
+      (payload: any) => {
+        setData((d) => {
+          const arr = d[key] as { id: string }[];
+          if (payload.eventType === 'DELETE') {
+            return { ...d, [key]: arr.filter((x) => x.id !== payload.old?.id) };
+          }
+          return { ...d, [key]: upsertBy(arr, mapper(payload.new), prepend) };
+        });
+      };
+
+    const channel = sb
+      .channel('ohh-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, applyChange('leads', rowToLead, true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, applyChange('team', rowToRep, false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, applyChange('projects', rowToProject, false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, applyChange('appointments', rowToAppointment, false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity' }, applyChange('activity', rowToActivity, true))
+      .subscribe();
+
+    return () => {
+      mounted.current = false;
+      sb.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const value = useMemo<Store>(() => {
-    const logActivity = (text: string, kind: AppData['activity'][number]['kind']) => ({
-      id: uid('ac'),
-      text,
-      at: nowISO(),
-      kind,
-    });
-
     return {
       data,
-      addLead: (l) =>
-        setData((d) => {
-          const pos = l.lat != null && l.lng != null ? { lat: l.lat, lng: l.lng } : nearTerritory();
-          const lead: Lead = {
-            ...l,
-            ...pos,
-            knockStatus: l.knockStatus ?? 'not_knocked',
+      loading,
+
+      addLead: async (l) => {
+        if (!supabase) return;
+        const pos = l.lat != null && l.lng != null ? { lat: l.lat, lng: l.lng } : nearTerritory();
+        const { data: row } = await supabase
+          .from('leads')
+          .insert({
+            name: l.name,
+            phone: l.phone ?? '',
+            email: l.email ?? '',
+            address: l.address ?? '',
+            type: l.type,
+            value: l.value ?? 0,
             stage: l.stage ?? 'new',
-            id: uid('l'),
-            createdAt: nowISO(),
-          };
-          return {
-            ...d,
-            leads: [lead, ...d.leads],
-            activity: [logActivity(`New lead: ${lead.name} — ${lead.type}`, 'lead'), ...d.activity],
-          };
-        }),
-      setLeadStage: (id, stage) =>
-        setData((d) => {
-          const lead = d.leads.find((x) => x.id === id);
-          const extra =
-            lead && stage === 'won'
-              ? [logActivity(`${lead.name} moved to Won — $${lead.value.toLocaleString()} ${lead.type}`, 'win')]
-              : [];
-          return {
-            ...d,
-            leads: d.leads.map((x) => (x.id === id ? { ...x, stage } : x)),
-            activity: [...extra, ...d.activity],
-          };
-        }),
-      deleteLead: (id) => setData((d) => ({ ...d, leads: d.leads.filter((x) => x.id !== id) })),
-      addRep: (r) =>
-        setData((d) => {
-          const rep: Rep = {
-            ...r,
-            id: uid('r'),
+            source: l.source || 'Manual',
+            rep_id: l.repId || null,
+            knock_status: l.knockStatus ?? 'not_knocked',
+            lat: pos.lat,
+            lng: pos.lng,
+          })
+          .select()
+          .single();
+        if (row) {
+          const lead = rowToLead(row);
+          setData((d) => ({ ...d, leads: upsertBy(d.leads, lead, true) }));
+          logActivity(`New lead: ${lead.name} — ${lead.type}`, 'lead');
+        }
+      },
+
+      setLeadStage: async (id, stage) => {
+        if (!supabase) return;
+        const lead = data.leads.find((x) => x.id === id);
+        setData((d) => ({ ...d, leads: d.leads.map((x) => (x.id === id ? { ...x, stage } : x)) }));
+        await supabase.from('leads').update({ stage }).eq('id', id);
+        if (lead && stage === 'won') {
+          logActivity(`${lead.name} moved to Won — $${lead.value.toLocaleString()} ${lead.type}`, 'win');
+        }
+      },
+
+      deleteLead: async (id) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, leads: d.leads.filter((x) => x.id !== id) }));
+        await supabase.from('leads').delete().eq('id', id);
+      },
+
+      addRep: async (r) => {
+        if (!supabase) return { ok: false, error: 'Backend not connected yet.' };
+        const color = PALETTE[data.team.length % PALETTE.length];
+        const { data: row, error } = await supabase
+          .from('team_members')
+          .insert({
+            name: r.name,
+            title: r.title || 'Sales Consultant',
+            email: r.email || '',
+            phone: r.phone || '',
+            role: 'rep',
             initials: initialsFrom(r.name),
-            color: PALETTE[d.team.length % PALETTE.length],
-          };
-          return {
-            ...d,
-            team: [...d.team, rep],
-            activity: [logActivity(`${rep.name} joined the sales team`, 'team'), ...d.activity],
-          };
-        }),
-      setProjectStatus: (id, status) =>
-        setData((d) => ({
-          ...d,
-          projects: d.projects.map((p) => (p.id === id ? { ...p, status } : p)),
-        })),
-      toggleAppointment: (id) =>
-        setData((d) => ({
-          ...d,
-          appointments: d.appointments.map((a) => (a.id === id ? { ...a, done: !a.done } : a)),
-        })),
-      setKnockStatus: (id, status) =>
-        setData((d) => ({
-          ...d,
-          leads: d.leads.map((l) => (l.id === id ? { ...l, knockStatus: status } : l)),
-        })),
-      importLeads: (rows) => {
+            color,
+          })
+          .select()
+          .single();
+        if (error) {
+          const msg = /row-level security|policy/i.test(error.message)
+            ? 'Only the team admin can add reps.'
+            : /duplicate|unique/i.test(error.message)
+            ? 'Someone with that email is already on the team.'
+            : error.message;
+          return { ok: false, error: msg };
+        }
+        if (row) {
+          const rep = rowToRep(row);
+          setData((d) => ({ ...d, team: upsertBy(d.team, rep, false) }));
+          logActivity(`${rep.name} was added to the sales team`, 'team');
+        }
+        return { ok: true };
+      },
+
+      setProjectStatus: async (id, status) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, projects: d.projects.map((p) => (p.id === id ? { ...p, status } : p)) }));
+        await supabase.from('projects').update({ status }).eq('id', id);
+      },
+
+      toggleAppointment: async (id) => {
+        if (!supabase) return;
+        const cur = data.appointments.find((a) => a.id === id);
+        const done = !(cur?.done ?? false);
+        setData((d) => ({ ...d, appointments: d.appointments.map((a) => (a.id === id ? { ...a, done } : a)) }));
+        await supabase.from('appointments').update({ done }).eq('id', id);
+      },
+
+      setKnockStatus: async (id, status) => {
+        if (!supabase) return;
+        setData((d) => ({ ...d, leads: d.leads.map((l) => (l.id === id ? { ...l, knockStatus: status } : l)) }));
+        await supabase.from('leads').update({ knock_status: status }).eq('id', id);
+      },
+
+      importLeads: async (rows) => {
+        if (!supabase) return 0;
         const valid = rows.filter((r) => r.name && r.name.trim());
         if (valid.length === 0) return 0;
-        setData((d) => {
-          const reps = d.team;
-          const newLeads: Lead[] = valid.map((r, i) => ({
-            id: uid('l'),
+        const reps = data.team.filter((m) => m.role !== 'admin');
+        const payload = valid.map((r, i) => {
+          const pos = nearTerritory();
+          return {
             name: r.name.trim(),
             phone: r.phone?.trim() ?? '',
             email: r.email?.trim() ?? '',
@@ -175,25 +259,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             value: r.value ?? 0,
             stage: 'new',
             source: r.source?.trim() || 'Imported',
-            repId: reps.length ? reps[i % reps.length].id : '',
-            createdAt: nowISO(),
-            knockStatus: 'not_knocked',
-            ...nearTerritory(),
-          }));
-          return {
-            ...d,
-            leads: [...newLeads, ...d.leads],
-            activity: [logActivity(`Imported ${newLeads.length} contacts into leads`, 'lead'), ...d.activity],
+            rep_id: reps.length ? reps[i % reps.length].id : null,
+            knock_status: 'not_knocked',
+            lat: pos.lat,
+            lng: pos.lng,
           };
         });
-        return valid.length;
-      },
-      resetDemo: () => {
-        persist.clear();
-        setData(seedData());
+        const { data: inserted } = await supabase.from('leads').insert(payload).select();
+        if (inserted?.length) {
+          setData((d) => {
+            let next = d.leads;
+            for (const row of inserted) next = upsertBy(next, rowToLead(row), true);
+            return { ...d, leads: next };
+          });
+          logActivity(`Imported ${inserted.length} contacts into leads`, 'lead');
+        }
+        return inserted?.length ?? 0;
       },
     };
-  }, [data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, loading]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.bg, gap: 12 }}>
+        <ActivityIndicator size="large" color={theme.color.primary} />
+        <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>Loading your workspace…</Text>
+      </View>
+    );
+  }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
@@ -204,7 +298,7 @@ export function useStore() {
   return ctx;
 }
 
-/** Convenience selectors. */
+/** Convenience selector used across screens. */
 export function repById(team: Rep[], id: string) {
   return team.find((r) => r.id === id);
 }

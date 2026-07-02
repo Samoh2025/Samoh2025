@@ -2,17 +2,19 @@ name: Deploy Sam's site
 
 # Publishes the app to EAS Hosting at https://sam-one-horizon-homes.expo.app
 #
-# One-time setup (no terminal needed):
-#   1. Create a free Expo account at https://expo.dev
-#   2. Make an access token at https://expo.dev/settings/access-tokens
-#   3. In this GitHub repo: Settings -> Secrets and variables -> Actions ->
-#      "New repository secret", name it EXPO_TOKEN, paste the token, Save.
-#   4. This workflow then runs automatically on every push, or you can start it
-#      from the Actions tab. The first run creates the Expo project for you.
+# One-time setup (no terminal needed) — add these GitHub repo secrets under
+# Settings -> Secrets and variables -> Actions -> "New repository secret":
+#   1. EXPO_TOKEN                   from https://expo.dev/settings/access-tokens
+#   2. EXPO_PUBLIC_SUPABASE_URL     your Supabase Project URL   (Project Settings -> API)
+#   3. EXPO_PUBLIC_SUPABASE_ANON_KEY your Supabase anon/public key (same page)
+# See SETUP.md for the full walkthrough. The site still deploys without the
+# Supabase secrets, but shows a "connect the backend" screen until they're set.
 
 on:
   push:
-    branches: [claude/admin-site-replicas-sam-u6yh8n]
+    branches:
+      - claude/admin-site-replicas-sam-u6yh8n
+      - claude/onehorizonhomes-web-app-1mt7ox
   workflow_dispatch:
 
 permissions:
@@ -50,7 +52,20 @@ jobs:
           echo "EXPO_TOKEN is set. Authenticated as:"
           eas whoami
 
+      - name: Check the Supabase connection secrets
+        run: |
+          if [ -z "${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" ] || [ -z "${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" ]; then
+            echo "::warning::Supabase secrets are not set yet. The site will deploy but show the 'connect the backend' screen. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (see SETUP.md), then re-run."
+          else
+            echo "Supabase connection secrets are present."
+          fi
+
       - name: Export the web bundle
+        # EXPO_PUBLIC_* vars are baked into the bundle at build time, so they
+        # must be present during export.
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
         run: npx expo export --platform web
 
       - name: Deploy to production (with retries for first-time hosting provisioning)

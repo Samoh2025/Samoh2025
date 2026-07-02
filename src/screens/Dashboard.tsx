@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { useStore, repById } from '../store';
+import { useAuth } from '../auth';
 import { CONFIG } from '../config';
 import { theme } from '../theme';
 import {
@@ -19,7 +20,9 @@ import type { RouteKey } from '../nav';
 
 export default function Dashboard({ go }: { go: (r: RouteKey) => void }) {
   const { data } = useStore();
+  const { user } = useAuth();
   const { leads, team, appointments, activity } = data;
+  const firstName = (user?.name || CONFIG.admin.name).split(' ')[0];
 
   const open = leads.filter((l) => l.stage !== 'won' && l.stage !== 'lost');
   const won = leads.filter((l) => l.stage === 'won');
@@ -33,8 +36,9 @@ export default function Dashboard({ go }: { go: (r: RouteKey) => void }) {
   }));
   const maxStage = Math.max(1, ...stageCounts.map((s) => s.count));
 
-  // Per-rep leaderboard by won value
+  // Per-rep leaderboard by won value (reps only, not the admin)
   const leaderboard = team
+    .filter((r) => r.role !== 'admin')
     .map((r) => {
       const repWon = won.filter((l) => l.repId === r.id);
       return {
@@ -61,7 +65,7 @@ export default function Dashboard({ go }: { go: (r: RouteKey) => void }) {
       {/* Greeting */}
       <View>
         <Text style={{ fontSize: theme.font.h1, fontWeight: '800', color: theme.color.text }}>
-          Good to see you, {CONFIG.admin.name} 👋
+          Good to see you, {firstName} 👋
         </Text>
         <Text style={{ color: theme.color.muted, marginTop: 4, fontSize: theme.font.body }}>
           Here's how {CONFIG.teamName} is performing today.

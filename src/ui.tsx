@@ -230,12 +230,14 @@ export function Field({
   onChangeText,
   placeholder,
   keyboardType,
+  secureTextEntry,
 }: {
   label: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+  secureTextEntry?: boolean;
 }) {
   return (
     <View style={{ gap: 6 }}>
@@ -246,6 +248,9 @@ export function Field({
         placeholder={placeholder}
         placeholderTextColor="#A9B6C2"
         keyboardType={keyboardType as any}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={keyboardType === 'email-address' ? 'none' : undefined}
+        autoCorrect={keyboardType === 'email-address' ? false : undefined}
         style={styles.input}
       />
     </View>

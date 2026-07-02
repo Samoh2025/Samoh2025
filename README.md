@@ -1,8 +1,9 @@
 # One Horizon Homes — Sam's Sales Team
 
-A self-functioning **sales-team admin app** for **Sam**, built as a separate copy of the
-One Horizon Homes admin site. It runs on its own (no backend required) and is branded
-end‑to‑end for Sam so his link is unmistakably his.
+A **live, multi-user sales-team app** for **Sam**, built as a separate copy of the
+One Horizon Homes admin site. Sam and every rep get their **own login** and share the
+**same live data** across all their devices. It's branded end-to-end for Sam so his link
+is unmistakably his.
 
 ## The two links
 
@@ -12,74 +13,72 @@ end‑to‑end for Sam so his link is unmistakably his.
 | **Sam** | `https://sam-one-horizon-homes.expo.app` | This project. Sam's name is built into the URL. |
 
 Because Sam's app is a **separate Expo project with its own slug** (`sam-one-horizon-homes`),
-deploying it creates a brand‑new URL and has **zero effect** on your existing site.
+deploying it creates a brand-new URL and has **zero effect** on your existing site.
+
+## 🔌 One-time setup to go live
+
+This app runs on a small, free backend (**Supabase**) so real accounts and live sync work.
+**Do this once** — it takes about 10 minutes and needs no terminal:
+
+### → Follow [`SETUP.md`](SETUP.md)
+
+In short: create a free Supabase project, run [`supabase/schema.sql`](supabase/schema.sql),
+paste two values (`EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY`) into GitHub
+secrets, and deploy. Until that's done, the live site shows a friendly
+“connect the backend” screen instead of crashing.
 
 ## What's inside
 
-A complete sales command center for a home‑improvement / construction sales team:
+A complete sales command center for a home-improvement / construction sales team:
 
-- **Accounts** — real sign‑up / sign‑in. Sam is the admin account
-  (`sam@onehorizonhomes.com`); anyone he adds is a sales rep.
+- **Real accounts** — Sam and each rep sign up and sign in from their **own phone or
+  laptop**. The admin email (`sam@onehorizonhomes.com`) is the **Admin**; everyone else is a
+  **Sales Rep**. Adding a rep in *Sales Team* lets them sign up with that email and go live.
+- **Live sync** — new leads, stage moves and door-knock outcomes appear on everyone's
+  screen in real time (Supabase realtime).
 - **Dashboard** — KPIs (open leads, pipeline value, deals won, upcoming visits),
   a pipeline funnel, a team leaderboard, upcoming appointments and a live activity feed.
 - **Leads & Pipeline** — add leads, **import contacts** (paste CSV / spreadsheet),
   filter by stage, and move them New → Contacted → Appointment → Quoted → Won / Lost.
-- **Door‑Knock Map** — a live OpenStreetMap of the territory with a pin per door,
+- **Door-Knock Map** — a live OpenStreetMap of the territory with a pin per door,
   colored by knock outcome (interested / call back / no answer / not interested / not
-  knocked), the rep's own location, and a route list to update outcomes in the field.
-- **Sales Team** — Sam's reps with per‑rep stats; add new reps.
+  knocked), and a route list reps update in the field — synced to the whole team.
+- **Sales Team** — Sam's reps with per-rep stats; add reps (they show **Invited** until
+  they create their account, then **Active**).
 - **Projects** — jobs from *Estimating* through *Completed*, with values and status.
 - **Appointments** — consultations, site visits, walkthroughs and closings; check them off.
-- **Settings** — shows **Sam's website link** front‑and‑center, plus profile, company info,
-  reset‑to‑sample‑data, and sign‑out.
+- **Settings** — the shareable team link, your profile, company info, and sign-out.
 
-The brand is **black & white** throughout. Everything is interactive and persists in the
-browser (localStorage), so Sam can use it as a working app with no server.
+The brand is **black & white** throughout.
 
-> **Single device vs. team‑wide:** accounts and door‑knock outcomes are stored in the
-> browser, so they're real on one device. For every rep to log in on **their own phone**
-> and for the map to track the team **live across devices**, add a backend (e.g. Supabase) —
-> a one‑time setup step. The brand **logo image** and exact **font** also need to be
-> supplied (this build uses a monochrome placeholder logo and a clean system font).
+> **Data & security:** all data lives in your Supabase project, protected by
+> Row Level Security so only signed-in members of the team can read or write it. The
+> `EXPO_PUBLIC_SUPABASE_ANON_KEY` is safe to ship to the browser — that's what it's for.
 
-> **Note on accuracy:** This session was locked down and could not open
-> `one-horizon-homes.expo.app` (the network policy blocked it, and the app is login‑protected),
-> so this is a faithful **rebuild from scratch**, not a byte‑for‑byte clone. To make it match
-> your real app screen‑for‑screen, send screenshots of each screen and the app can be aligned exactly.
+> **Still placeholder:** the brand **logo image** and exact **font** (this build uses a
+> monochrome vector mark and a clean system font). Send the real assets to swap them in.
+> Screenshots of your real app let us align it screen-for-screen.
 
 ## Run it locally
 
 ```bash
+cp .env.example .env   # paste your two Supabase values (see SETUP.md)
 npm install
-npm run web        # opens the app in your browser
+npm run web            # opens the app in your browser
 ```
 
-Type‑check and production web build:
+Type-check and production web build:
 
 ```bash
 npm run typecheck
-npm run export:web # outputs a static site to ./dist
+npm run export:web     # outputs a static site to ./dist
 ```
 
-## Deploy it to `sam-one-horizon-homes.expo.app`
+## Deploy to `sam-one-horizon-homes.expo.app`
 
-This is the only step that needs **your Expo account** (login + publish). It is quick:
-
-```bash
-# 1. Install the Expo tools (once)
-npm install -g eas-cli
-
-# 2. Sign in to your Expo account
-eas login
-
-# 3. Link this folder to a NEW Expo project named "sam-one-horizon-homes"
-#    (this is what produces the sam-one-horizon-homes.expo.app subdomain)
-eas init --non-interactive --force
-
-# 4. Build the web export and deploy it to EAS Hosting
-npm run export:web
-eas deploy --prod
-```
+Deploys are automated by GitHub Actions (`.github/workflows/deploy.yml`). Add three repo
+secrets once — `EXPO_TOKEN`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+(see [`SETUP.md`](SETUP.md)) — then every push deploys, or run it from the **Actions** tab.
 
 The deployment URL comes from the project **slug** in `app.json` (`sam-one-horizon-homes`),
 so the result is `https://sam-one-horizon-homes.expo.app`. Your own
@@ -87,8 +86,8 @@ so the result is `https://sam-one-horizon-homes.expo.app`. Your own
 
 ## Make another admin's copy later
 
-All of the per‑admin branding lives in **one file**: [`src/config.ts`](src/config.ts).
-To spin up a copy for a different admin, copy this project and change only:
+Per-admin branding lives in **one file**: [`src/config.ts`](src/config.ts). To spin up a copy
+for a different admin, copy this project, point it at its own Supabase project, and change:
 
 ```ts
 admin:  { name: 'Sam', fullName: 'Sam Horizon', email: 'sam@onehorizonhomes.com', ... },
@@ -96,25 +95,33 @@ teamName: "Sam's Sales Team",
 site:   { slug: 'sam-one-horizon-homes', url: 'https://sam-one-horizon-homes.expo.app' },
 ```
 
-Update the matching `slug`/`name` in `app.json`, then deploy — nothing else needs to change.
+Update the matching `slug`/`name` in `app.json` and the `admin_email` in
+`supabase/schema.sql`, then deploy.
 
 ## Project structure
 
 ```
-App.tsx                 # root: auth gate + screen routing
+App.tsx                 # root: config gate → auth gate → screen routing
 index.ts                # Expo entry point
 app.json                # Expo config (name, slug = the .expo.app subdomain, web settings)
 eas.json                # EAS build/deploy config
+.env.example            # local Supabase connection template
+supabase/
+  schema.sql            # ← run once in Supabase: tables, security, triggers, realtime
 src/
   config.ts             # ← all of Sam's branding lives here
+  supabase.ts           # Supabase client (reads EXPO_PUBLIC_SUPABASE_* env vars)
+  auth.tsx              # real accounts via Supabase Auth
+  store.tsx             # live data + realtime sync + actions
+  mappers.ts            # database rows ↔ app types
   theme.ts              # colors, spacing, typography
   types.ts              # data models (Lead, Rep, Project, Appointment…)
-  data.ts               # seeded sample data for the demo
-  store.tsx             # app state + actions + localStorage persistence
+  data.ts               # door-knock territory center
   nav.ts                # navigation routes
   ui.tsx                # shared components (Card, Button, Badge, Avatar, Modal…)
   Shell.tsx             # responsive sidebar / top-bar layout
-  screens/              # Login, Dashboard, Leads, Team, Projects, Appointments, Settings
+  screens/              # Login, SignUp, SetupNeeded, Dashboard, Leads, DoorKnock,
+                        #   Team, Projects, Appointments, Settings
 ```
 
-Built with Expo (SDK 56) + React Native Web.
+Built with Expo (SDK 56) + React Native Web + Supabase.

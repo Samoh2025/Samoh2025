@@ -1,12 +1,16 @@
 import React from 'react';
 import { View, Text, ScrollView, Linking } from 'react-native';
-import { useStore } from '../store';
+import { useAuth } from '../auth';
 import { CONFIG } from '../config';
 import { theme } from '../theme';
 import { Card, Avatar, Badge, Button, SectionTitle } from '../ui';
 
 export default function Settings({ onSignOut }: { onSignOut: () => void }) {
-  const { resetDemo } = useStore();
+  const { user, isAdmin } = useAuth();
+
+  const displayName = user?.name || CONFIG.admin.fullName;
+  const displayEmail = user?.email || CONFIG.admin.email;
+  const roleLabel = isAdmin ? CONFIG.admin.role : (user?.title || 'Sales Rep');
 
   return (
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
@@ -15,11 +19,13 @@ export default function Settings({ onSignOut }: { onSignOut: () => void }) {
         <Text style={{ color: theme.color.muted, marginTop: 2 }}>Your account and workspace</Text>
       </View>
 
-      {/* Your link — the personalized part */}
+      {/* The team link — share this with reps */}
       <Card style={{ borderColor: theme.color.accent, borderWidth: 1.5 }}>
-        <SectionTitle>Your website link</SectionTitle>
+        <SectionTitle>Your team's link</SectionTitle>
         <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>
-          This is {CONFIG.admin.name}'s own workspace. Bookmark this link — it's separate from any other admin's site.
+          {isAdmin
+            ? 'Share this link with your reps. Each rep creates their own account and signs in from their own phone — everyone shares the same live data.'
+            : `This is ${CONFIG.admin.name}'s workspace. Bookmark this link and sign in from any device.`}
         </Text>
         <View
           style={{
@@ -39,18 +45,21 @@ export default function Settings({ onSignOut }: { onSignOut: () => void }) {
           </Text>
           <Button small variant="accent" icon="↗" title="Open" onPress={() => Linking.openURL(CONFIG.site.url)} />
         </View>
-        <Badge label={`${CONFIG.admin.name}'s site`} tone="accent" />
+        <Badge label="Live · shared across all devices" tone="accent" />
       </Card>
 
       {/* Profile */}
       <Card>
-        <SectionTitle>Admin profile</SectionTitle>
+        <SectionTitle>Your profile</SectionTitle>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <Avatar initials={CONFIG.admin.initials} color={theme.color.primary} size={56} />
+          <Avatar initials={user?.initials || CONFIG.admin.initials} color={theme.color.primary} size={56} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '800', fontSize: theme.font.h3, color: theme.color.text }}>{CONFIG.admin.fullName}</Text>
-            <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>{CONFIG.admin.role}</Text>
-            <Text style={{ color: theme.color.muted, fontSize: theme.font.tiny, marginTop: 2 }}>{CONFIG.admin.email}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text style={{ fontWeight: '800', fontSize: theme.font.h3, color: theme.color.text }}>{displayName}</Text>
+              <Badge label={isAdmin ? 'Admin' : 'Sales Rep'} tone="neutral" />
+            </View>
+            <Text style={{ color: theme.color.muted, fontSize: theme.font.small }}>{roleLabel}</Text>
+            <Text style={{ color: theme.color.muted, fontSize: theme.font.tiny, marginTop: 2 }}>{displayEmail}</Text>
           </View>
         </View>
       </Card>
@@ -63,16 +72,13 @@ export default function Settings({ onSignOut }: { onSignOut: () => void }) {
         <Row label="Tagline" value={CONFIG.tagline} />
       </Card>
 
-      {/* Data controls */}
+      {/* Account */}
       <Card>
-        <SectionTitle>Workspace data</SectionTitle>
+        <SectionTitle>Account</SectionTitle>
         <Text style={{ color: theme.color.muted, fontSize: theme.font.small, marginBottom: 12 }}>
-          This standalone build stores your leads, team and projects on this device. Reset to restore the original sample data.
+          Your leads, team and projects are saved securely in the cloud and stay in sync on every device.
         </Text>
-        <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-          <Button variant="outline" icon="↺" title="Reset sample data" onPress={resetDemo} />
-          <Button variant="danger" icon="⎋" title="Sign out" onPress={onSignOut} />
-        </View>
+        <Button variant="danger" icon="⎋" title="Sign out" onPress={onSignOut} />
       </Card>
 
       <Text style={{ textAlign: 'center', color: theme.color.muted, fontSize: theme.font.tiny, marginTop: 8 }}>

@@ -187,15 +187,19 @@ function ImportContactsModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onImport: (rows: ImportRow[]) => number;
+  onImport: (rows: ImportRow[]) => Promise<number>;
 }) {
   const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
   const parsed = useMemo(() => parseContacts(text), [text]);
 
   const sample = 'Name, Phone, Email, Address, Value, Source\nJohn Smith, (201) 555-0123, john@email.com, 12 Elm St Ridgewood NJ, 45000, Referral';
 
-  const submit = () => {
-    const n = onImport(parsed);
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    const n = await onImport(parsed);
+    setBusy(false);
     if (n > 0) {
       setText('');
       onClose();
@@ -231,7 +235,7 @@ function ImportContactsModal({
       </Text>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Button title="Cancel" variant="outline" onPress={onClose} style={{ flex: 1 }} />
-        <Button title={`Import ${parsed.length || ''}`.trim()} variant="primary" icon="⇪" onPress={submit} style={{ flex: 1 }} />
+        <Button title={busy ? 'Importing…' : `Import ${parsed.length || ''}`.trim()} variant="primary" icon="⇪" onPress={submit} style={{ flex: 1 }} />
       </View>
     </AppModal>
   );

@@ -1,123 +1,161 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { CONFIG } from './config';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './supabase';
+import { rowToRep } from './mappers';
+import { Rep } from './types';
 
 /**
- * Lightweight account system for the standalone build.
+ * Real accounts, backed by Supabase Auth.
  *
- * Accounts are stored in this browser (localStorage). Sam is the admin; anyone
- * he adds is a sales rep. This makes "create an account" and sign-in real on a
- * single device. Logging in from *other* devices (each rep on their own phone)
- * and live cross-device sync require the backend step described in the README.
+ * Anyone can create an account at the site and it works on every device. The
+ * configured admin email (or the very first account) becomes the Admin; everyone
+ * else is a Sales Rep. Each account is linked to a row on the team roster
+ * (`team_members`) by a database trigger, which we read back here as the
+ * signed-in person's profile.
  */
-export type Role = 'admin' | 'rep';
+export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 
-export type Account = {
-  email: string;
-  password: string;
-  name: string;
-  company: string;
-  role: Role;
-};
-
-const ACC_KEY = `ohh:${CONFIG.site.slug}:accounts:v2`;
-const SESSION_KEY = `ohh:${CONFIG.site.slug}:session:v1`;
-
-function loadAccounts(): Account[] {
-  try {
-    if (typeof localStorage === 'undefined') return seedAccounts();
-    const raw = localStorage.getItem(ACC_KEY);
-    if (!raw) return seedAccounts();
-    return JSON.parse(raw) as Account[];
-  } catch {
-    return seedAccounts();
-  }
-}
-
-function saveAccounts(list: Account[]) {
-  try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(ACC_KEY, JSON.stringify(list));
-  } catch {
-    /* ignore */
-  }
-}
-
-function seedAccounts(): Account[] {
-  // Pre-create Sam's admin account so the workspace is ready out of the box.
-  return [
-    {
-      email: CONFIG.admin.email,
-      password: 'bazbooz22',
-      name: CONFIG.admin.fullName,
-      company: CONFIG.brand,
-      role: 'admin',
-    },
-  ];
-}
+export type SignUpInput = { name: string; email: string; password: string; company?: string };
+export type Result = { ok: boolean; error?: string; needsConfirmation?: boolean };
 
 type Auth = {
-  user: Account | null;
-  signIn: (email: string, password: string) => { ok: boolean; error?: string };
-  signUp: (input: { name: string; email: string; password: string; company?: string }) => { ok: boolean; error?: string };
-  signOut: () => void;
+  status: AuthStatus;
+  session: Session | null;
+  /** The signed-in person's team-roster profile (name, role, etc.). */
+  user: Rep | null;
+  isAdmin: boolean;
+  signIn: (email: string, password: string) => Promise<Result>;
+  signUp: (input: SignUpInput) => Promise<Result>;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<Auth | null>(null);
 
+/** Read the signed-in user's roster row. Retries briefly because the row is
+ *  created by a trigger that may land a moment after sign-up. */
+async function fetchProfile(userId: string): Promise<Rep | null> {
+  if (!supabase) return null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data } = await supabase
+      .from('team_members')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (data) return rowToRep(data);
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [accounts, setAccounts] = useState<Account[]>(() => loadAccounts());
-  const [email, setEmail] = useState<string | null>(() => {
-    try {
-      return typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<Rep | null>(null);
+  const mounted = useRef(true);
 
-  useEffect(() => saveAccounts(accounts), [accounts]);
   useEffect(() => {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      if (email) localStorage.setItem(SESSION_KEY, email);
-      else localStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* ignore */
+    mounted.current = true;
+    if (!supabase) {
+      setStatus('signedOut');
+      return;
     }
-  }, [email]);
 
-  const value = useMemo<Auth>(() => {
-    const user = accounts.find((a) => a.email === email) ?? null;
-    return {
-      user,
-      signIn: (e, p) => {
-        const acc = accounts.find((a) => a.email.toLowerCase() === e.trim().toLowerCase());
-        if (!acc) return { ok: false, error: 'No account found for that email.' };
-        if (acc.password !== p) return { ok: false, error: 'Incorrect password.' };
-        setEmail(acc.email);
-        return { ok: true };
-      },
-      signUp: ({ name, email: e, password, company }) => {
-        const clean = e.trim().toLowerCase();
-        if (!name.trim()) return { ok: false, error: 'Please enter your name.' };
-        if (!clean || !clean.includes('@')) return { ok: false, error: 'Please enter a valid email.' };
-        if (password.length < 4) return { ok: false, error: 'Password must be at least 4 characters.' };
-        if (accounts.some((a) => a.email.toLowerCase() === clean))
-          return { ok: false, error: 'An account with that email already exists — try signing in.' };
-        const acc: Account = {
-          email: e.trim(),
-          password,
-          name: name.trim(),
-          company: company?.trim() || CONFIG.brand,
-          role: 'admin',
-        };
-        setAccounts((list) => [...list, acc]);
-        setEmail(acc.email);
-        return { ok: true };
-      },
-      signOut: () => setEmail(null),
+    // Load any existing session, then keep in sync with auth changes.
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted.current) return;
+      applySession(data.session);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      if (!mounted.current) return;
+      applySession(next);
+    });
+
+    return () => {
+      mounted.current = false;
+      sub.subscription.unsubscribe();
     };
-  }, [accounts, email]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function applySession(next: Session | null) {
+    setSession(next);
+    if (!next?.user) {
+      setUser(null);
+      setStatus('signedOut');
+      return;
+    }
+    const profile = await fetchProfile(next.user.id);
+    if (!mounted.current) return;
+    // Fall back to a minimal profile from the auth record if the roster row
+    // hasn't materialized yet, so the app never gets stuck on a blank screen.
+    setUser(
+      profile ?? {
+        id: next.user.id,
+        name: (next.user.user_metadata?.name as string) || next.user.email || 'Member',
+        title: 'Sales Consultant',
+        email: next.user.email || '',
+        phone: '',
+        initials: ((next.user.email || 'M')[0] || 'M').toUpperCase(),
+        color: '#111111',
+        role: 'rep',
+        userId: next.user.id,
+      },
+    );
+    setStatus('signedIn');
+  }
+
+  const value = useMemo<Auth>(
+    () => ({
+      status,
+      session,
+      user,
+      isAdmin: user?.role === 'admin',
+      signIn: async (email, password) => {
+        if (!supabase) return { ok: false, error: 'Backend not connected yet.' };
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) return { ok: false, error: friendly(error.message) };
+        return { ok: true };
+      },
+      signUp: async ({ name, email, password }) => {
+        if (!supabase) return { ok: false, error: 'Backend not connected yet.' };
+        const clean = email.trim();
+        if (!name.trim()) return { ok: false, error: 'Please enter your name.' };
+        if (!clean.includes('@')) return { ok: false, error: 'Please enter a valid email.' };
+        if (password.length < 6) return { ok: false, error: 'Password must be at least 6 characters.' };
+        const { data, error } = await supabase.auth.signUp({
+          email: clean,
+          password,
+          options: { data: { name: name.trim() } },
+        });
+        if (error) return { ok: false, error: friendly(error.message) };
+        // If email confirmation is ON, there's no session yet — tell the user.
+        if (!data.session) return { ok: true, needsConfirmation: true };
+        return { ok: true };
+      },
+      signOut: async () => {
+        await supabase?.auth.signOut();
+        setUser(null);
+        setSession(null);
+        setStatus('signedOut');
+      },
+    }),
+    [status, session, user],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/** Turn a few common Supabase error strings into plain language. */
+function friendly(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes('invalid login')) return 'Incorrect email or password.';
+  if (m.includes('already registered')) return 'An account with that email already exists — try signing in.';
+  if (m.includes('email not confirmed')) return 'Please confirm your email first (check your inbox).';
+  return msg;
 }
 
 export function useAuth() {

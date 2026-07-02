@@ -116,7 +116,7 @@ export default function DoorKnock() {
       </View>
 
       <Text style={{ textAlign: 'center', color: theme.color.muted, fontSize: theme.font.tiny, marginTop: 4 }}>
-        Map data © OpenStreetMap. Real-time tracking of every rep's phone needs the backend step (see README).
+        Map data © OpenStreetMap. Door outcomes sync live across the whole team as reps update them in the field.
       </Text>
     </ScrollView>
   );

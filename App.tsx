@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { isSupabaseConfigured } from './src/supabase';
 import { StoreProvider } from './src/store';
 import { AuthProvider, useAuth } from './src/auth';
+import { theme } from './src/theme';
 import { RouteKey } from './src/nav';
 import Shell from './src/Shell';
 import Login from './src/screens/Login';
 import SignUp from './src/screens/SignUp';
+import SetupNeeded from './src/screens/SetupNeeded';
 import Dashboard from './src/screens/Dashboard';
 import Leads from './src/screens/Leads';
 import DoorKnock from './src/screens/DoorKnock';
@@ -15,12 +19,22 @@ import Projects from './src/screens/Projects';
 import Appointments from './src/screens/Appointments';
 import Settings from './src/screens/Settings';
 
+function Splash() {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.bg }}>
+      <ActivityIndicator size="large" color={theme.color.primary} />
+    </View>
+  );
+}
+
 function Root() {
-  const { user, signOut } = useAuth();
+  const { status, signOut } = useAuth();
   const [route, setRoute] = useState<RouteKey>('dashboard');
   const [showSignUp, setShowSignUp] = useState(false);
 
-  if (!user) {
+  if (status === 'loading') return <Splash />;
+
+  if (status !== 'signedIn') {
     return showSignUp ? (
       <SignUp onBack={() => setShowSignUp(false)} />
     ) : (
@@ -49,9 +63,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <AuthProvider>
-        <Root />
-      </AuthProvider>
+      {isSupabaseConfigured ? (
+        <AuthProvider>
+          <Root />
+        </AuthProvider>
+      ) : (
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <SetupNeeded />
+        </SafeAreaView>
+      )}
     </SafeAreaProvider>
   );
 }
