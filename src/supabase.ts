@@ -18,8 +18,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
  * Set them locally in a `.env` file (see .env.example) and in CI as GitHub
  * Actions secrets (see .github/workflows/deploy.yml and SETUP.md).
  */
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+// Connected project's public values. These are safe to commit — the publishable
+// key is designed to be shipped in the browser and your data is protected by Row
+// Level Security. Environment variables (e.g. GitHub Actions secrets) still take
+// precedence, so you can override these without editing code.
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://oxazdqpjkwjebmomtzhp.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_lfbqVMAZCnT9RB-gqzDd0A_QnkKOP7A';
 
 /** True once both connection values are present. */
 export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
