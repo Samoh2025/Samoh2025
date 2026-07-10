@@ -53,7 +53,7 @@ const listingLabel = (s?: ListingStatus) => LISTING_STATUSES.find((x) => x.key =
 const knockLabel = (s?: KnockStatus) => KNOCK_STATUSES.find((x) => x.key === (s ?? 'not_knocked'))?.label ?? '';
 
 export default function DoorKnock() {
-  const { data, addDoor, importDoors, setKnockStatus, setCategory, setListingStatus, setDnc, addNote, isDnc } = useStore();
+  const { data, addDoor, importDoors, setKnockStatus, setCategory, setListingStatus, setDnc, addNote, deleteLead, isDnc } = useStore();
   const { user } = useAuth();
   const { leads } = data;
 
@@ -235,6 +235,12 @@ export default function DoorKnock() {
           selected &&
           addNote(selected.id, { text, outcome: selected.knockStatus, authorId: user?.userId, authorName: user?.name ?? 'Team member' })
         }
+        onDelete={() => {
+          if (selected) {
+            deleteLead(selected.id);
+            setSelectedId(null);
+          }
+        }}
         blockedCall={selected ? isDnc(selected.phone) || !!selected.dnc : false}
       />
 
@@ -351,6 +357,7 @@ function DoorDetailsModal({
   onListing,
   onDnc,
   onNote,
+  onDelete,
   blockedCall,
 }: {
   door: Lead | null;
@@ -361,6 +368,7 @@ function DoorDetailsModal({
   onListing: (s: ListingStatus) => void;
   onDnc: (v: boolean) => void;
   onNote: (text: string) => void;
+  onDelete: () => void;
   blockedCall: boolean;
 }) {
   const { call } = useDialer();
@@ -444,6 +452,7 @@ function DoorDetailsModal({
         <Button title="Close" variant="outline" onPress={onClose} style={{ flex: 1 }} />
         <Button title="Save note" variant="primary" icon="＋" onPress={addNote} style={{ flex: 1 }} />
       </View>
+      <Button title="Remove this door" variant="danger" icon="🗑" onPress={onDelete} />
     </AppModal>
   );
 }
