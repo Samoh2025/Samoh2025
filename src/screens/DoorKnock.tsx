@@ -239,7 +239,7 @@ export default function DoorKnock() {
       />
 
       {/* Import a list of properties (addresses + statuses) */}
-      <ImportPropertiesModal visible={importOpen} onClose={() => setImportOpen(false)} onImport={importDoors} />
+      <ImportPropertiesModal visible={importOpen} onClose={() => setImportOpen(false)} onImport={importDoors} team={data.team} />
     </ScrollView>
   );
 }
@@ -556,13 +556,16 @@ function ImportPropertiesModal({
   visible,
   onClose,
   onImport,
+  team,
 }: {
   visible: boolean;
   onClose: () => void;
   onImport: (doors: NewDoor[]) => Promise<number>;
+  team: { id: string; name: string; role?: string }[];
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [assignTo, setAssignTo] = useState('');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<{ added: number; skipped: number } | null>(null);
 
@@ -594,6 +597,7 @@ function ImportPropertiesModal({
           phone: row.phone,
           category: row.category,
           listingStatus: row.listingStatus,
+          repId: assignTo || undefined,
         });
       }
       // Only throttle when we actually hit the free geocoder.
@@ -634,6 +638,15 @@ function ImportPropertiesModal({
           textAlignVertical: 'top',
         }}
       />
+      {team.length ? (
+        <ChipSelect
+          label="Assign these doors to"
+          options={['', ...team.map((t) => t.id)]}
+          value={assignTo}
+          onChange={setAssignTo}
+          renderLabel={(id) => (id === '' ? 'Unassigned (shared)' : team.find((t) => t.id === id)?.name ?? id)}
+        />
+      ) : null}
       <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.small }}>
         {busy && progress
           ? `Adding properties… ${progress.done + 1} of ${progress.total}`
