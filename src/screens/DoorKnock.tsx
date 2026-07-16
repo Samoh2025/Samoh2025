@@ -315,6 +315,11 @@ function AddDoorModal({
         onChangeText={setAddress}
         placeholder="123 Main St, Wayne, NJ"
       />
+      {pending && !pending.loading && address.trim() && !/^\s*\d/.test(address) ? (
+        <Text style={{ color: theme.color.text, fontWeight: '700', fontSize: theme.font.tiny }}>
+          ⚠ No house number detected — add it (e.g. “123 {address.trim()}”) so reps hit the right house.
+        </Text>
+      ) : null}
       <Field label="Name / business (optional)" value={name} onChangeText={setName} placeholder="e.g. The Smiths / Corner Deli" />
       <Field label="Phone (optional)" value={phone} onChangeText={setPhone} placeholder="(973) 555-0100" keyboardType="phone-pad" />
       <ChipSelect
