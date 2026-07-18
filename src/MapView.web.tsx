@@ -1,53 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { MapViewProps } from './MapView';
-
-const CSS_HREF = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+import { LEAFLET_CSS } from './leafletStyles';
 
 /**
- * Load Leaflet's stylesheet and report when it is actually ready.
+ * Inject Leaflet's stylesheet synchronously from the bundled copy.
  *
- * The map MUST NOT be created before this CSS is in place: Leaflet positions
- * its tiles with rules from leaflet.css, so initialising early makes the tiles
- * stack and scatter (the "glitching tiles" bug). We gate map creation on this
- * flag, and fail open (ready = true) if the CDN is slow or blocked so the map
- * still renders.
+ * The map MUST have this CSS in place before it is created: Leaflet positions
+ * every tile with these rules, so a missing or late stylesheet makes the tiles
+ * stack and scatter (the "glitching tiles" bug). Using a bundled <style> tag
+ * instead of a CDN <link> means the rules are applied immediately and can
+ * never fail to load.
  */
-function useLeafletCss() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const doc: any = (globalThis as any).document;
-    if (!doc) return;
-
-    const markReady = () => setReady(true);
-
-    const existing = doc.getElementById('leaflet-css');
-    if (existing) {
-      // Already loaded in a previous mount → its stylesheet is attached.
-      if (existing.sheet) {
-        markReady();
-      } else {
-        existing.addEventListener('load', markReady);
-        existing.addEventListener('error', markReady);
-      }
-      return;
-    }
-
-    const link = doc.createElement('link');
-    link.id = 'leaflet-css';
-    link.rel = 'stylesheet';
-    link.href = CSS_HREF;
-    link.addEventListener('load', markReady);
-    link.addEventListener('error', markReady); // fail open — try to render anyway
-    doc.head.appendChild(link);
-
-    // Safety net in case neither event fires (cached/odd browsers).
-    const timer = setTimeout(markReady, 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  return ready;
+function ensureLeafletCss() {
+  const doc: any = (globalThis as any).document;
+  if (!doc || doc.getElementById('leaflet-css')) return;
+  const style = doc.createElement('style');
+  style.id = 'leaflet-css';
+  style.textContent = LEAFLET_CSS;
+  doc.head.appendChild(style);
 }
 
 // Black & white marker styling by door-knock status.
@@ -71,11 +42,10 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
-  const cssReady = useLeafletCss();
 
-  // Create the map once — but only after the Leaflet CSS is ready.
+  // Create the map once, with the stylesheet already applied.
   useEffect(() => {
-    if (!cssReady) return;
+    ensureLeafletCss();
     if (!elRef.current || mapRef.current) return;
 
     const map = L.map(elRef.current, { scrollWheelZoom: true }).setView([center.lat, center.lng], 13);
@@ -92,14 +62,15 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
     setMapReady(true);
 
     // Keep the tile grid aligned whenever the container is resized (the map
-    // sits inside a scroll view / flexible card, so its width can change).
+    // sits inside a scroll view / flexible card, so its width can change, and
+    // it can even mount at width 0 before layout settles).
     const RO = (globalThis as any).ResizeObserver;
     let ro: any;
     if (RO && elRef.current) {
       ro = new RO(() => map.invalidateSize());
       ro.observe(elRef.current);
     }
-    // One more pass after layout settles for the initial mount.
+    // One more pass after the initial layout settles.
     const settle = setTimeout(() => map.invalidateSize(), 200);
 
     // "My location" for the rep currently knocking.
@@ -132,7 +103,7 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
       setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cssReady]);
+  }, []);
 
   // Redraw markers when points change (and once the map is ready).
   useEffect(() => {
