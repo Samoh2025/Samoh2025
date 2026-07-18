@@ -1,18 +1,24 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import type { MapViewProps } from './MapView';
+import { LEAFLET_CSS } from './leafletStyles';
 
-const CSS_HREF = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-
+/**
+ * Inject Leaflet's stylesheet synchronously from the bundled copy.
+ *
+ * The map MUST have this CSS in place before it is created: Leaflet positions
+ * every tile with these rules, so a missing or late stylesheet makes the tiles
+ * stack and scatter (the "glitching tiles" bug). Using a bundled <style> tag
+ * instead of a CDN <link> means the rules are applied immediately and can
+ * never fail to load.
+ */
 function ensureLeafletCss() {
   const doc: any = (globalThis as any).document;
-  if (!doc) return;
-  if (doc.getElementById('leaflet-css')) return;
-  const link = doc.createElement('link');
-  link.id = 'leaflet-css';
-  link.rel = 'stylesheet';
-  link.href = CSS_HREF;
-  doc.head.appendChild(link);
+  if (!doc || doc.getElementById('leaflet-css')) return;
+  const style = doc.createElement('style');
+  style.id = 'leaflet-css';
+  style.textContent = LEAFLET_CSS;
+  doc.head.appendChild(style);
 }
 
 // Black & white marker styling by door-knock status.
@@ -35,24 +41,41 @@ export default function MapView({ points, center, zoom = 12, height = 460, onSel
   const elRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
   // Keep the latest callbacks in refs so the once-created map uses fresh values.
   const clickRef = useRef(onMapClick);
   clickRef.current = onMapClick;
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
 
-  // Create the map once.
+  // Create the map once, with the stylesheet already applied.
   useEffect(() => {
     ensureLeafletCss();
     if (!elRef.current || mapRef.current) return;
     const map = L.map(elRef.current, { scrollWheelZoom: true }).setView([center.lat, center.lng], zoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
+      // Redraw eagerly while panning/zooming so tiles don't lag behind.
+      updateWhenIdle: false,
+      keepBuffer: 4,
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 50);
+    map.invalidateSize();
+    setMapReady(true);
+
+    // Keep the tile grid aligned whenever the container is resized (the map
+    // sits inside a scroll view / flexible card, so its width can change, and
+    // it can even mount at width 0 before layout settles).
+    const RO = (globalThis as any).ResizeObserver;
+    let ro: any;
+    if (RO && elRef.current) {
+      ro = new RO(() => map.invalidateSize());
+      ro.observe(elRef.current);
+    }
+    // One more pass after the initial layout settles.
+    const settle = setTimeout(() => map.invalidateSize(), 200);
 
     // Tap an empty spot to drop a new door.
     map.on('click', (e: any) => {
@@ -81,13 +104,17 @@ export default function MapView({ points, center, zoom = 12, height = 460, onSel
     }
 
     return () => {
+      clearTimeout(settle);
+      if (ro) ro.disconnect();
       map.remove();
       mapRef.current = null;
+      layerRef.current = null;
+      setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redraw markers when points change.
+  // Redraw markers when points change (and once the map is ready).
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
@@ -105,7 +132,7 @@ export default function MapView({ points, center, zoom = 12, height = 460, onSel
       });
       m.addTo(layer);
     });
-  }, [points]);
+  }, [points, mapReady]);
 
   return <div ref={elRef} style={{ width: '100%', height, borderRadius: 14, overflow: 'hidden' }} />;
 }
