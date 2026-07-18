@@ -1,19 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+// Bundle Leaflet's stylesheet with the app instead of fetching it from a CDN at
+// runtime. Loading the CSS from unpkg.com meant that whenever that request was
+// slow, blocked, or offline the map lost all its layout rules and "glitched
+// out" — tiles rendered as scrambled, misaligned boxes. Importing it here lets
+// Metro inline the styles into the web bundle, so the map is always styled.
+import 'leaflet/dist/leaflet.css';
 import type { MapViewProps } from './MapView';
 
-const CSS_HREF = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-
-function ensureLeafletCss() {
-  const doc: any = (globalThis as any).document;
-  if (!doc) return;
-  if (doc.getElementById('leaflet-css')) return;
-  const link = doc.createElement('link');
-  link.id = 'leaflet-css';
-  link.rel = 'stylesheet';
-  link.href = CSS_HREF;
-  doc.head.appendChild(link);
-}
+// A neutral, map-like background shown under the tiles. If a tile ever fails to
+// load, the gap blends into this color instead of showing a broken-image icon.
+const MAP_BG = '#E8EAED';
+// 1×1 transparent pixel used in place of a failed tile so missing tiles fade
+// into the map background rather than rendering the browser's broken-image glyph.
+const BLANK_TILE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 // Black & white marker styling by door-knock status.
 function styleFor(status?: string) {
@@ -38,15 +39,17 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
 
   // Create the map once.
   useEffect(() => {
-    ensureLeafletCss();
     if (!elRef.current || mapRef.current) return;
     const map = L.map(elRef.current, { scrollWheelZoom: true }).setView([center.lat, center.lng], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
+      errorTileUrl: BLANK_TILE,
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
+    // Leaflet needs a second sizing pass once the container has its final
+    // dimensions, otherwise the tile grid can render offset on first paint.
     setTimeout(() => map.invalidateSize(), 50);
 
     // "My location" for the rep currently knocking.
@@ -93,7 +96,12 @@ export default function MapView({ points, center, height = 460, onSelect }: MapV
     });
   }, [points, onSelect]);
 
-  return <div ref={elRef} style={{ width: '100%', height, borderRadius: 14, overflow: 'hidden' }} />;
+  return (
+    <div
+      ref={elRef}
+      style={{ width: '100%', height, borderRadius: 14, overflow: 'hidden', background: MAP_BG }}
+    />
+  );
 }
 
 function escapeHtml(s: string) {
